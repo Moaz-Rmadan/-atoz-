@@ -52,12 +52,12 @@ export class DriverLocationService {
         }
       },
       (error) => {
-        console.error('GPS tracking subscription failure:', error.message);
+        console.warn('GPS tracking telemetry notification:', error.message);
       },
       {
         enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
+        timeout: 20000,
+        maximumAge: 15000,
       }
     );
   }

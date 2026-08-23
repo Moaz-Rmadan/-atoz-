@@ -15,11 +15,15 @@ import {
   Power,
   Shield,
   Activity,
+  ChevronLeft,
 } from 'lucide-react';
-import { DriverProfile, Ride, RideStatus } from '../../services/mobilityApi';
+import { DriverProfile, Ride, RideStatus, Vehicle } from '../../services/mobilityApi';
 
 interface CaptainDashboardViewProps {
   driverProfile: DriverProfile | null;
+  vehicles?: Vehicle[];
+  selectedVehicleId?: string;
+  onManageVehicles?: () => void;
   activeRide: Ride | null;
   availableRides: Ride[];
   isOnline: boolean;
@@ -33,6 +37,9 @@ interface CaptainDashboardViewProps {
 
 export const CaptainDashboardView: React.FC<CaptainDashboardViewProps> = ({
   driverProfile,
+  vehicles = [],
+  selectedVehicleId = '',
+  onManageVehicles,
   activeRide,
   availableRides,
   isOnline,
@@ -43,6 +50,9 @@ export const CaptainDashboardView: React.FC<CaptainDashboardViewProps> = ({
   isRefreshing,
   onRegisterClick,
 }) => {
+  const activeVehicles = vehicles.filter((v) => v.is_active);
+  const primaryVehicle =
+    vehicles.find((v) => v.id === selectedVehicleId) || activeVehicles[0];
   // Not registered as Captain fallback
   if (!driverProfile) {
     return (
@@ -256,6 +266,43 @@ export const CaptainDashboardView: React.FC<CaptainDashboardViewProps> = ({
               <span>4.9</span>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* My Vehicles Card */}
+      <div
+        onClick={onManageVehicles}
+        className="bg-white rounded-3xl p-4 shadow-sm border border-slate-200/90 flex items-center justify-between hover:border-slate-300 cursor-pointer transition-all active:scale-[0.99]"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-800 flex items-center justify-center border border-slate-200/60">
+            <Car className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h4 className="font-black text-sm text-slate-900">مركباتي</h4>
+              <span
+                className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                  activeVehicles.length > 0
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : 'bg-amber-50 text-amber-700 border border-amber-200'
+                }`}
+              >
+                {activeVehicles.length > 0
+                  ? `${activeVehicles.length} ${activeVehicles.length === 1 ? 'مركبة نشطة' : 'مركبات نشطة'}`
+                  : 'لا توجد مركبات'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 font-medium">
+              {primaryVehicle
+                ? `المركبة الحالية: ${primaryVehicle.make} ${primaryVehicle.model} (${primaryVehicle.plate_number})`
+                : 'اضغط لإضافة وإدارة مركباتك واستقبال الرحلات'}
+            </p>
+          </div>
+        </div>
+
+        <div className="w-8 h-8 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 border border-slate-200/80">
+          <ChevronLeft className="w-4 h-4" />
         </div>
       </div>
 

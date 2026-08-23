@@ -273,7 +273,8 @@ export const mobilityApi = {
     const { data, error } = await supabase
       .from('vehicles')
       .select('*')
-      .eq('driver_id', driverId);
+      .eq('driver_id', driverId)
+      .order('created_at', { ascending: false });
 
     if (error) {
       console.error('Error getting vehicles:', error);
@@ -281,6 +282,113 @@ export const mobilityApi = {
     }
 
     return data || [];
+  },
+
+  /**
+   * Update vehicle details
+   */
+  async updateVehicle(
+    vehicleId: string,
+    vehicle: {
+      make: string;
+      model: string;
+      year: number;
+      plateNumber: string;
+      color?: string | null;
+    }
+  ): Promise<Vehicle> {
+    if (!isSupabaseConfigured()) {
+      const idx = mockVehicles.findIndex(v => v.id === vehicleId);
+      if (idx !== -1) {
+        mockVehicles[idx] = {
+          ...mockVehicles[idx],
+          make: vehicle.make,
+          model: vehicle.model,
+          year: vehicle.year,
+          plate_number: vehicle.plateNumber,
+          color: vehicle.color || null,
+        };
+        return mockVehicles[idx];
+      }
+      throw new Error('المركبة غير موجودة.');
+    }
+
+    const { data, error } = await supabase
+      .from('vehicles')
+      .update({
+        make: vehicle.make,
+        model: vehicle.model,
+        year: vehicle.year,
+        plate_number: vehicle.plateNumber,
+        color: vehicle.color || null,
+      })
+      .eq('id', vehicleId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating vehicle:', error);
+      if (error.code === '23505') {
+        throw new Error('لوحة السيارة هذه مسجلة بالفعل في النظام.');
+      }
+      throw new Error(error.message || 'فشل تحديث بيانات المركبة.');
+    }
+
+    return data;
+  },
+
+  /**
+   * Toggle vehicle active status
+   */
+  async toggleVehicleStatus(vehicleId: string, isActive: boolean): Promise<Vehicle> {
+    if (!isSupabaseConfigured()) {
+      const idx = mockVehicles.findIndex(v => v.id === vehicleId);
+      if (idx !== -1) {
+        mockVehicles[idx].is_active = isActive;
+        return mockVehicles[idx];
+      }
+      throw new Error('المركبة غير موجودة.');
+    }
+
+    const { data, error } = await supabase
+      .from('vehicles')
+      .update({ is_active: isActive })
+      .eq('id', vehicleId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error toggling vehicle status:', error);
+      throw new Error(error.message || 'فشل تغيير حالة تفعيل المركبة.');
+    }
+
+    return data;
+  },
+
+  /**
+   * Delete vehicle (if not referenced by historical rides)
+   */
+  async deleteVehicle(vehicleId: string): Promise<void> {
+    if (!isSupabaseConfigured()) {
+      const idx = mockVehicles.findIndex(v => v.id === vehicleId);
+      if (idx !== -1) {
+        mockVehicles.splice(idx, 1);
+      }
+      return;
+    }
+
+    const { error } = await supabase
+      .from('vehicles')
+      .delete()
+      .eq('id', vehicleId);
+
+    if (error) {
+      console.error('Error deleting vehicle:', error);
+      if (error.code === '23503') {
+        throw new Error('لا يمكن حذف هذه المركبة لوجود رحلات سابقة مرتبطة بها. يمكنك تعطيلها بدلاً من الحذف.');
+      }
+      throw new Error(error.message || 'فشل حذف المركبة.');
+    }
   },
 
   /**

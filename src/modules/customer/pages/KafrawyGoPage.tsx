@@ -43,6 +43,7 @@ import { RideCompletedModal } from '../components/KafrawyGo/RideCompletedModal';
 import { CaptainDashboardView } from '../components/KafrawyGo/CaptainDashboardView';
 import { GpsPermissionSheet } from '../components/KafrawyGo/GpsPermissionSheet';
 import { FieldTestConsole } from '../components/KafrawyGo/FieldTestConsole/FieldTestConsole';
+import { CaptainVehiclesView } from '../components/KafrawyGo/CaptainVehiclesView';
 
 interface KafrawyGoPageProps {
   onBackToDashboard: () => void;
@@ -52,8 +53,10 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
   const { user } = useAuth();
   const { success, error: toastError, info } = useToast();
 
-  // Active View Tab: 'passenger' | 'captain' | 'register_captain' | 'qa_audit'
-  const [activeTab, setActiveTab] = useState<'passenger' | 'captain' | 'register_captain' | 'qa_audit'>('passenger');
+  // Active View Tab: 'passenger' | 'captain' | 'captain_vehicles' | 'register_captain' | 'qa_audit'
+  const [activeTab, setActiveTab] = useState<
+    'passenger' | 'captain' | 'captain_vehicles' | 'register_captain' | 'qa_audit'
+  >('passenger');
   const [isLoading, setIsLoading] = useState(true);
 
   // User GPS & Locations
@@ -463,13 +466,11 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
         );
         driverLocationService.startTracking(rideId, driverProfile.id);
       } catch (gpsError: any) {
-        if (import.meta.env.VITE_MOBILITY_DEMO_MODE !== 'true') {
-          console.error('GPS initial capture failed:', gpsError);
-          toastError('تحذير: لم نتمكن من التقاط موقعك GPS بدقة.');
-        } else {
-          await mobilityApi.sendLocationUpdate(rideId, driverProfile.id, 31.1107, 30.9388);
-          driverLocationService.startTracking(rideId, driverProfile.id);
-        }
+        console.warn('GPS initial capture warning, using fallback coordinate:', gpsError?.message || gpsError);
+        const fallbackLat = userCoords?.lat || 31.1107;
+        const fallbackLng = userCoords?.lng || 30.9388;
+        await mobilityApi.sendLocationUpdate(rideId, driverProfile.id, fallbackLat, fallbackLng, 0);
+        driverLocationService.startTracking(rideId, driverProfile.id);
       }
     } catch (e: any) {
       toastError(e.message || 'فشل قبول الرحلة، ربما تم قبولها من كابتن آخر.');
@@ -617,7 +618,7 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
           <button
             onClick={() => setActiveTab('captain')}
             className={`px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-              activeTab === 'captain' || activeTab === 'register_captain'
+              activeTab === 'captain' || activeTab === 'register_captain' || activeTab === 'captain_vehicles'
                 ? 'bg-slate-900 text-white shadow-sm'
                 : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100/60'
             }`}
@@ -715,6 +716,9 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
               >
                 <CaptainDashboardView
                   driverProfile={driverProfile}
+                  vehicles={vehicles}
+                  selectedVehicleId={selectedVehicleId}
+                  onManageVehicles={() => setActiveTab('captain_vehicles')}
                   activeRide={activeDriverRide}
                   availableRides={availableRides}
                   isOnline={driverProfile?.is_online ?? false}
@@ -724,6 +728,30 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
                   onRefreshRides={loadAvailableRides}
                   isRefreshing={isRefreshingAvailable}
                   onRegisterClick={() => setActiveTab('register_captain')}
+                />
+              </motion.div>
+            )}
+
+            {/* CAPTAIN VEHICLES MANAGEMENT VIEW */}
+            {activeTab === 'captain_vehicles' && (
+              <motion.div
+                key="captain-vehicles-view"
+                initial={{ y: 30, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: 30, opacity: 0 }}
+                className="w-full max-h-[82vh] overflow-y-auto rounded-3xl"
+              >
+                <CaptainVehiclesView
+                  driverProfile={driverProfile}
+                  selectedVehicleId={selectedVehicleId}
+                  onSelectPrimaryVehicle={(vId) => setSelectedVehicleId(vId)}
+                  onBack={async () => {
+                    if (driverProfile?.id) {
+                      const updatedVehs = await mobilityApi.getDriverVehicles(driverProfile.id);
+                      setVehicles(updatedVehs);
+                    }
+                    setActiveTab('captain');
+                  }}
                 />
               </motion.div>
             )}

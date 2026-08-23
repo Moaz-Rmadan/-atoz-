@@ -64,7 +64,8 @@ export class FareEngine {
     pickupLat: number,
     pickupLng: number,
     dropoffLat: number,
-    dropoffLng: number
+    dropoffLng: number,
+    customSurge?: number
   ): Promise<FareBreakdown> {
     // 1. Validate coordinates logic to block fake/impossible endpoints
     if (
@@ -83,31 +84,61 @@ export class FareEngine {
     );
 
     // 3. Compute detailed break-down
-    return this.calculateBreakdown(route.distanceKm, route.durationMinutes);
+    return this.calculateBreakdown(route.distanceKm, route.durationMinutes, customSurge);
   }
 
   /**
    * Map raw distance/duration numbers to strict fare rules
    */
-  public calculateBreakdown(distanceKm: number, durationMinutes: number): FareBreakdown {
-    const baseFare = this.CONFIG.baseFare;
-    const distanceFare = distanceKm * this.CONFIG.pricePerKm;
-    const timeFare = durationMinutes * this.CONFIG.pricePerMinute;
-    const bookingFee = this.CONFIG.bookingFee;
-    const surgeMultiplier = this.getActiveSurgeMultiplier();
+  public calculateBreakdown(
+    distanceKm: number,
+    durationMinutes: number,
+    customSurge?: number
+  ): FareBreakdown {
+    // 1. Sanitize & clamp all numerical inputs against NaN, Infinity, and Negative numbers
+    const validDistance =
+      typeof distanceKm === 'number' && !isNaN(distanceKm) && isFinite(distanceKm) && distanceKm > 0
+        ? distanceKm
+        : 0;
 
-    // Sum calculation formula: (base + distance + duration) * surge + service_fee
-    const calculatedSum = (baseFare + distanceFare + timeFare) * surgeMultiplier + bookingFee;
-    
-    // Apply strict system minimum floor pricing
+    const validDuration =
+      typeof durationMinutes === 'number' && !isNaN(durationMinutes) && isFinite(durationMinutes) && durationMinutes > 0
+        ? durationMinutes
+        : 0;
+
+    const baseFare = this.CONFIG.baseFare;
+    const distanceFare = validDistance * this.CONFIG.pricePerKm;
+    const timeFare = validDuration * this.CONFIG.pricePerMinute;
+    const bookingFee = this.CONFIG.bookingFee;
+
+    const surgeMultiplier =
+      typeof customSurge === 'number' && !isNaN(customSurge) && isFinite(customSurge) && customSurge >= 1.0
+        ? customSurge
+        : this.getActiveSurgeMultiplier();
+
+    // 2. Base trip fare without surge
+    const unSurgedTripCost = baseFare + distanceFare + timeFare + bookingFee;
+
+    // 3. Calculated fare with all applicable factors
+    // If the raw un-surged ride is already below the minimum fare (e.g. 0km or ultra-short 100m trip),
+    // the trip is an entry-level minimum fare trip that floors to MINIMUM_FARE (20 EGP).
+    // For regular trips, surge is applied to the ride meter sum before service fee.
+    let calculatedSum: number;
+    if (unSurgedTripCost <= this.CONFIG.minimumFare) {
+      calculatedSum = this.CONFIG.minimumFare;
+    } else {
+      calculatedSum = (baseFare + distanceFare + timeFare) * surgeMultiplier + bookingFee;
+    }
+
+    // 4. Strict final floor guarantee: finalFare = Math.max(calculatedFareWithAllApplicableFactors, MINIMUM_FARE)
     const finalFareRaw = Math.max(calculatedSum, this.CONFIG.minimumFare);
     const finalFare = Math.round(finalFareRaw * 100) / 100; // Safe rounding to 2 decimal places
 
     return {
       baseFare,
-      distanceKm: Number(distanceKm.toFixed(2)),
+      distanceKm: Number(validDistance.toFixed(2)),
       distanceFare: Number(distanceFare.toFixed(2)),
-      durationMinutes: Number(durationMinutes.toFixed(2)),
+      durationMinutes: Number(validDuration.toFixed(2)),
       timeFare: Number(timeFare.toFixed(2)),
       bookingFee,
       surgeMultiplier,
