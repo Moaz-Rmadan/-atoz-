@@ -7,6 +7,7 @@ import {
   fetchCustomerOrders,
 } from '../services/customerApi';
 import { Avatar } from '../../../components/ui/Avatar';
+import { Button } from '../../../components/ui/Button';
 import { 
   UserCheck, 
   MapPin, 
@@ -23,8 +24,12 @@ import {
   History
 } from 'lucide-react';
 
-export const CustomerDashboardPage: React.FC = () => {
-  const { user, signOut } = useAuth();
+interface CustomerDashboardPageProps {
+  onNavigateToAdmin?: () => void;
+}
+
+export const CustomerDashboardPage: React.FC<CustomerDashboardPageProps> = ({ onNavigateToAdmin }) => {
+  const { user, signOut, isAdmin } = useAuth();
   
   const [activeTab, setActiveTab] = useState<'overview' | 'services' | 'rides' | 'orders'>('overview');
   const [services, setServices] = useState<any[]>([]);
@@ -129,6 +134,30 @@ export const CustomerDashboardPage: React.FC = () => {
            </div>
         </div>
       </div>
+
+      {/* Admin Quick Banner */}
+      {isAdmin() && (
+        <div className="px-2">
+          <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-3xl p-5 shadow-xl border border-slate-800 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center text-emerald-400">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="font-bold text-base">لوحة التحكم الإدارية</h4>
+                <p className="text-xs text-white/70">لدى حسابك صلاحيات مشرف النظام (Admin)</p>
+              </div>
+            </div>
+            <Button
+              onClick={onNavigateToAdmin}
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2.5 rounded-xl cursor-pointer shadow-md"
+            >
+              دخول الإدارة
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Navigation Tabs */}
       <section className="px-2">

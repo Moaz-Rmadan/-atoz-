@@ -111,6 +111,7 @@ function AppContent() {
             onNavigateToServices={() => setCurrentView('services_discovery')}
             onNavigateToGo={() => setCurrentView('driver')}
             onNavigateToMarketplace={() => setCurrentView('marketplace')}
+            onNavigateToAdmin={() => setCurrentView('admin')}
           />
         </ProtectedRoute>
       )}

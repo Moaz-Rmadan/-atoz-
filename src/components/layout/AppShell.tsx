@@ -11,7 +11,8 @@ import {
   Home,
   MapPin,
   ChevronLeft,
-  UserCheck
+  UserCheck,
+  ShieldCheck
 } from 'lucide-react';
 
 export type ActiveView =
@@ -48,7 +49,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   onNavigate,
   children,
 }) => {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isAdmin } = useAuth();
   const [isNotifDrawerOpen, setIsNotifDrawerOpen] = useState(false);
   const [isLocationSheetOpen, setIsLocationSheetOpen] = useState(false);
 
@@ -108,7 +109,17 @@ export const AppShell: React.FC<AppShellProps> = ({
             </div>
 
             {/* Actions */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              {isAdmin() && (
+                <button
+                  onClick={() => onNavigate('admin')}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-slate-900 text-white rounded-xl text-xs font-bold shadow-sm hover:bg-slate-800 transition-colors cursor-pointer"
+                  title="لوحة الإدارة"
+                >
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>الإدارة</span>
+                </button>
+              )}
               <button
                 onClick={() => setIsNotifDrawerOpen(true)}
                 className="relative p-2 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"

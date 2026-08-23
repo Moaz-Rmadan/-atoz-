@@ -77,7 +77,7 @@ CREATE POLICY "Service categories public view" ON public.service_categories FOR 
 CREATE POLICY "Services public view" ON public.services FOR SELECT TO authenticated USING (is_active = true AND deleted_at IS NULL);
 
 CREATE POLICY "Service providers public view" ON public.service_providers FOR SELECT TO authenticated USING (verification_status = 'approved' OR profile_id = auth.uid() OR public.is_admin(auth.uid()));
-CREATE POLICY "Provider update own profile" ON public.service_providers FOR UPDATE TO authenticated USING (profile_id = auth.uid());
+CREATE POLICY "Provider update own profile" ON public.service_providers FOR UPDATE TO authenticated USING (profile_id = auth.uid() OR public.is_admin(auth.uid()));
 CREATE POLICY "User register provider profile" ON public.service_providers FOR INSERT TO authenticated WITH CHECK (profile_id = auth.uid());
 
 CREATE POLICY "Provider categories viewable by authenticated" ON public.service_provider_categories FOR SELECT TO authenticated USING (true);
@@ -113,7 +113,7 @@ CREATE POLICY "Customer create service review" ON public.service_reviews FOR INS
 CREATE POLICY "Approved drivers view" ON public.drivers FOR SELECT TO authenticated USING (
     approval_status = 'approved' OR profile_id = auth.uid() OR public.is_admin(auth.uid())
 );
-CREATE POLICY "Driver manage own profile" ON public.drivers FOR UPDATE TO authenticated USING (profile_id = auth.uid());
+CREATE POLICY "Driver manage own profile" ON public.drivers FOR UPDATE TO authenticated USING (profile_id = auth.uid() OR public.is_admin(auth.uid()));
 CREATE POLICY "User register driver profile" ON public.drivers FOR INSERT TO authenticated WITH CHECK (profile_id = auth.uid());
 
 CREATE POLICY "Vehicles viewable by driver or admin" ON public.vehicles FOR SELECT TO authenticated USING (
@@ -157,7 +157,7 @@ CREATE POLICY "Driver insert location updates" ON public.ride_location_updates F
 CREATE POLICY "Employers public view" ON public.employers FOR SELECT TO authenticated USING (
     verification_status = 'approved' OR profile_id = auth.uid() OR public.is_admin(auth.uid())
 );
-CREATE POLICY "Employer update own profile" ON public.employers FOR UPDATE TO authenticated USING (profile_id = auth.uid());
+CREATE POLICY "Employer update own profile" ON public.employers FOR UPDATE TO authenticated USING (profile_id = auth.uid() OR public.is_admin(auth.uid()));
 CREATE POLICY "User register employer profile" ON public.employers FOR INSERT TO authenticated WITH CHECK (profile_id = auth.uid());
 
 CREATE POLICY "Job categories public view" ON public.job_categories FOR SELECT TO authenticated USING (true);
@@ -178,7 +178,7 @@ CREATE POLICY "Resumes owner view/manage" ON public.resumes FOR ALL TO authentic
 CREATE POLICY "Merchants public view" ON public.merchants FOR SELECT TO authenticated USING (
     approval_status = 'approved' OR profile_id = auth.uid() OR public.is_admin(auth.uid())
 );
-CREATE POLICY "Merchant update own profile" ON public.merchants FOR UPDATE TO authenticated USING (profile_id = auth.uid());
+CREATE POLICY "Merchant update own profile" ON public.merchants FOR UPDATE TO authenticated USING (profile_id = auth.uid() OR public.is_admin(auth.uid()));
 CREATE POLICY "User register merchant profile" ON public.merchants FOR INSERT TO authenticated WITH CHECK (profile_id = auth.uid());
 
 CREATE POLICY "Product categories public view" ON public.product_categories FOR SELECT TO authenticated USING (true);
