@@ -1,0 +1,6 @@
+{
+  "name": "Kafrawy",
+  "description": "Kafrawy Super App - Comprehensive Local Services, Mobility, Jobs & Marketplace Platform",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

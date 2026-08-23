@@ -1,0 +1,30 @@
+@import "tailwindcss";
+@theme {  --font-cairo: 'IBM Plex Sans Arabic', 'Cairo', system-ui, -apple-system, sans-serif;}
+body {  font-family: var(--font-cairo);}
+
+@layer utilities {
+  .dir-rtl {
+    direction: rtl;
+  }
+  
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 16px);
+  }
+
+  /* Custom Scrollbar Hide */
+  .custom-scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .custom-scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
