@@ -124,8 +124,8 @@ export async function fetchUserAddresses(profileId: string): Promise<UserAddress
         id: 'addr-default',
         profile_id: profileId,
         title: 'المنزل الرئيسي',
-        city: 'كفر الشيخ',
-        street_address: 'شارع النصر، أمام مستشفى كفر الشيخ العام',
+        city: 'كفر البطيخ',
+        street_address: 'شارع النصر، أمام مستشفى كفر البطيخ المركزي',
         is_default: true
       }
     ];
@@ -158,7 +158,7 @@ export async function createUserAddress(
       id: `addr-${Date.now()}`,
       profile_id: profileId,
       title,
-      city: 'كفر الشيخ',
+      city: 'كفر البطيخ',
       street_address: streetAddress,
       is_default: false
     };
@@ -168,7 +168,7 @@ export async function createUserAddress(
     .insert({
       profile_id: profileId,
       title,
-      city: 'كفر الشيخ',
+      city: 'كفر البطيخ',
       street_address: streetAddress,
       is_default: false
     })
@@ -353,7 +353,7 @@ export async function createSecureServiceRequest(payload: {
   await createInAppNotification(
     payload.customer_id,
     'تأكيد استلام طلبك',
-    `تم تسجيل طلب الخدمة "${service.title_ar}" بنجاح وجاري مراجعته من الحرفيين المعتمدين بكفر الشيخ.`
+    `تم تسجيل طلب الخدمة "${service.title_ar}" بنجاح وجاري مراجعته من الحرفيين المعتمدين بكفر البطيخ ودمياط.`
   );
 
   return newRequest as ServiceRequestItem;
@@ -532,7 +532,7 @@ export async function registerProviderProfile(
   await createInAppNotification(
     userId,
     'طلب تسجيل الحساب الحرفي',
-    'تم تقديم طلبك بنجاح كمزود خدمة/حرفي موثق بكفر الشيخ. الطلب حالياً قيد المراجعة الأمنية والمهنية.'
+    'تم تقديم طلبك بنجاح كمزود خدمة/حرفي موثق بكفر البطيخ ودمياط. الطلب حالياً قيد المراجعة الأمنية والمهنية.'
   );
 }
 

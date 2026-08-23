@@ -61,10 +61,10 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
 
   // User GPS & Locations
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>({
-    lat: 31.1107,
-    lng: 30.9388,
+    lat: 31.4055,
+    lng: 31.7385,
   });
-  const [pickupText, setPickupText] = useState('موقعي الحالي (كفر الشيخ)');
+  const [pickupText, setPickupText] = useState('موقعي الحالي (كفر البطيخ)');
   const [dropoffText, setDropoffText] = useState('');
   const [pickupCoords, setPickupCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [dropoffCoords, setDropoffCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -467,8 +467,8 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
         driverLocationService.startTracking(rideId, driverProfile.id);
       } catch (gpsError: any) {
         console.warn('GPS initial capture warning, using fallback coordinate:', gpsError?.message || gpsError);
-        const fallbackLat = userCoords?.lat || 31.1107;
-        const fallbackLng = userCoords?.lng || 30.9388;
+        const fallbackLat = userCoords?.lat || 31.4055;
+        const fallbackLng = userCoords?.lng || 31.7385;
         await mobilityApi.sendLocationUpdate(rideId, driverProfile.id, fallbackLat, fallbackLng, 0);
         driverLocationService.startTracking(rideId, driverProfile.id);
       }
@@ -665,7 +665,7 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
                     </div>
                     <div>
                       <h4 className="font-black text-sm text-slate-900">إلى أين تريد الذهاب؟</h4>
-                      <p className="text-xs text-slate-400 font-medium">اختر وجهتك في كفر الشيخ</p>
+                      <p className="text-xs text-slate-400 font-medium">اختر وجهتك في كفر البطيخ ودمياط</p>
                     </div>
                   </div>
                   <div className="w-7 h-7 bg-white rounded-lg flex items-center justify-center text-slate-400 border border-slate-200">
@@ -676,9 +676,9 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
                 {/* Quick Landmarks Chips */}
                 <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
                   {[
-                    { label: 'جامعة كفر الشيخ 🎓', query: 'جامعة كفر الشيخ' },
-                    { label: 'مزلقان الانشاء 📍', query: 'مزلقان الانشاء والتعمير' },
-                    { label: 'سيتي كلوب ⚽', query: 'سيتي كلوب كفر الشيخ' },
+                    { label: 'مستشفى كفر البطيخ 🏥', query: 'مستشفى كفر البطيخ المركزي' },
+                    { label: 'محطة القطار 🚆', query: 'محطة قطار كفر البطيخ' },
+                    { label: 'جامعة دمياط 🎓', query: 'جامعة دمياط' },
                   ].map((chip, idx) => (
                     <button
                       key={idx}

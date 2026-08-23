@@ -317,7 +317,7 @@ export const CaptainVehiclesView: React.FC<CaptainVehiclesViewProps> = ({
           </div>
           <h4 className="text-sm font-black text-slate-900 mb-1">لم تسجل أي مركبة بعد</h4>
           <p className="text-xs text-slate-500 font-medium leading-relaxed max-w-xs mb-5">
-            أضف بيانات مركبتك الآن لتتمكن من استقبال وقبول طلبات الرحلات في كفر الشيخ.
+            أضف بيانات مركبتك الآن لتتمكن من استقبال وقبول طلبات الرحلات في كفر البطيخ ودمياط.
           </p>
           <button
             onClick={openAddSheet}

@@ -46,7 +46,7 @@ export const CustomerHomePage: React.FC<CustomerHomePageProps> = ({ onNavigateZo
           <h2 className="text-2xl font-black text-slate-900 mb-1">
             أهلاً بك في كفراوي 👋
           </h2>
-          <p className="text-sm font-medium text-slate-500">كل اللي محتاجه في كفر الشيخ في مكان واحد.</p>
+          <p className="text-sm font-medium text-slate-500">كل اللي محتاجه في كفر البطيخ ودمياط في مكان واحد.</p>
         </motion.div>
 
         {/* Search */}
@@ -106,7 +106,7 @@ export const CustomerHomePage: React.FC<CustomerHomePageProps> = ({ onNavigateZo
             <div className="bg-white/10 backdrop-blur-md border border-white/10 rounded-2xl p-4 mb-4 space-y-4">
               <div className="flex items-center gap-3">
                 <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-                <div className="flex-1 text-sm font-bold text-white border-b border-white/10 pb-2">موقعك الحالي (كفر الشيخ)</div>
+                <div className="flex-1 text-sm font-bold text-white border-b border-white/10 pb-2">موقعك الحالي (كفر البطيخ)</div>
               </div>
               <div className="flex items-center gap-3">
                 <div className="w-2.5 h-2.5 rounded-full bg-white" />

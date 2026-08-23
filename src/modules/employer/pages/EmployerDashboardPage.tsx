@@ -9,7 +9,7 @@ export const EmployerDashboardPage: React.FC = () => {
   return (
     <DashboardLayout
       title="منصة التوظيف والأعمال (Kafrawy Jobs)"
-      description="نشر إعلانات الوظائف، استلام السير الذاتية، وإدارة المقابلات بكفر الشيخ"
+      description="نشر إعلانات الوظائف، استلام السير الذاتية، وإدارة المقابلات بكفر البطيخ ودمياط"
       badge={
         <Badge variant="blue" icon={<Briefcase className="w-3.5 h-3.5" />}>
           قطاع أصحاب الأعمال والتوظيف

@@ -32,7 +32,7 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({ service, onRequest }) 
             {service.title_ar}
           </h3>
           <p className="text-xs text-slate-600 leading-relaxed line-clamp-2 min-h-[36px]">
-            {service.description_ar || 'خدمة صيانة معتمدة بأسعار تنافسية بكفر الشيخ.'}
+            {service.description_ar || 'خدمة صيانة معتمدة بأسعار تنافسية بكفر البطيخ ودمياط.'}
           </p>
         </div>
 

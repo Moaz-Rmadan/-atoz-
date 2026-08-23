@@ -411,7 +411,7 @@ export const AccountSettingsPage: React.FC = () => {
                   <div>
                     <div className="font-bold text-slate-900 text-sm">العروض والتخفيضات الترويجية</div>
                     <div className="text-xs text-slate-500 mt-0.5">
-                      التنبيه بالعروض الموسمية والخصومات الجديدة في سوق كفراوي بكفر الشيخ
+                      التنبيه بالعروض الموسمية والخصومات الجديدة في سوق كفراوي بكفر البطيخ ودمياط
                     </div>
                   </div>
                 </div>

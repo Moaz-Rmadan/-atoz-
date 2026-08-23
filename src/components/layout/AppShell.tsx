@@ -102,7 +102,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                 </span>
                 <span className="text-sm font-black text-slate-900 flex items-center gap-1">
                   <MapPin className="w-3.5 h-3.5 text-emerald-600" />
-                  كفر الشيخ، وسط البلد
+                  كفر البطيخ، دمياط
                 </span>
               </div>
             </div>
@@ -216,13 +216,13 @@ export const AppShell: React.FC<AppShellProps> = ({
               </div>
 
               <div className="flex-1 overflow-y-auto space-y-3">
-                {['وسط البلد', 'الجامعة', 'سخا', 'الزهراء'].map((loc, i) => (
+                {['وسط البلد', 'المحطة', 'طريق رأس البر', 'دمياط الجديدة'].map((loc, i) => (
                   <button key={i} onClick={() => setIsLocationSheetOpen(false)} className="w-full flex items-center gap-3 p-4 bg-slate-50 hover:bg-slate-100 rounded-2xl active:scale-95 transition-transform text-right cursor-pointer">
                     <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center shrink-0">
                       <MapPin className="w-5 h-5 text-emerald-600" />
                     </div>
                     <div>
-                      <h4 className="font-bold text-slate-900">كفر الشيخ، {loc}</h4>
+                      <h4 className="font-bold text-slate-900">كفر البطيخ، {loc}</h4>
                       <p className="text-xs text-slate-500">تم الحفظ مؤخراً</p>
                     </div>
                   </button>

@@ -883,7 +883,7 @@ export const AdminRbacPage: React.FC = () => {
                   <Activity className="w-5 h-5 text-blue-600 animate-pulse" />
                   مراقبة رحلات Kafrawy Go النشطة والتاريخية
                 </h2>
-                <p className="text-xs text-slate-500 mt-1">تتبع المسارات المباشرة للرحلات وأسعار التوصيل وحالة الأسطول والطلبات بكفر الشيخ</p>
+                <p className="text-xs text-slate-500 mt-1">تتبع المسارات المباشرة للرحلات وأسعار التوصيل وحالة الأسطول والطلبات بكفر البطيخ ودمياط</p>
               </div>
 
               <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">

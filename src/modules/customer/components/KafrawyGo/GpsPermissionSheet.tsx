@@ -47,7 +47,7 @@ export const GpsPermissionSheet: React.FC<GpsPermissionSheetProps> = ({
 
           <h3 className="text-xl font-black text-slate-900 mb-2">تحديد موقعك الحالي</h3>
           <p className="text-xs text-slate-500 font-medium max-w-xs mb-6 leading-relaxed">
-            نحتاج الوصول إلى موقعك الجغرافي لنحدد نقطة انطلاقك تلقائياً ونوفر لك أقرب كابتن متاح في كفر الشيخ.
+            نحتاج الوصول إلى موقعك الجغرافي لنحدد نقطة انطلاقك تلقائياً ونوفر لك أقرب كابتن متاح في كفر البطيخ ودمياط.
           </p>
 
           <div className="w-full flex flex-col gap-3">

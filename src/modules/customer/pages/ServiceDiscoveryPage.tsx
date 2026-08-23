@@ -97,7 +97,7 @@ export const ServiceDiscoveryPage: React.FC<ServiceDiscoveryPageProps> = ({
           )}
           <div>
             <h2 className="text-xl font-black text-slate-900">دليل الخدمات</h2>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">صنايعية وفنيين كفر الشيخ بين إيديك</p>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">صنايعية وفنيين كفر البطيخ ودمياط بين إيديك</p>
           </div>
         </div>
 

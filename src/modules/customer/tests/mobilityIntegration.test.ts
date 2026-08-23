@@ -81,12 +81,12 @@ export async function runMobilityIntegrationTest(userIds: {
     let activeRide: Ride | null = null;
     try {
       activeRide = await mobilityApi.requestRide(userIds.customer, {
-        pickupText: 'قسم كفر الشيخ، كفر الشيخ',
-        pickupLat: 31.1123,
-        pickupLng: 30.9411,
-        dropoffText: 'مستشفى جامعة كفر الشيخ',
-        dropoffLat: 31.0967,
-        dropoffLng: 30.9432,
+        pickupText: 'محطة كفر البطيخ، دمياط',
+        pickupLat: 31.4055,
+        pickupLng: 31.7385,
+        dropoffText: 'مستشفى كفر البطيخ المركزي',
+        dropoffLat: 31.4025,
+        dropoffLng: 31.7570,
         estimatedFare: 35,
       });
       log('Phase 5: Ride Creation', 'PASS', `Ride created successfully. Ride ID: ${activeRide.id}, Fare: ${activeRide.estimated_fare} EGP.`);
@@ -140,7 +140,7 @@ export async function runMobilityIntegrationTest(userIds: {
     log('Phase 10: GPS & Telemetry', 'INFO', 'Verifying live location tracking, accuracy bounding, and geography projection...');
     try {
       // Test coordinate validation
-      const validCoords = geolocationService.validateCoordinates(31.1123, 30.9411);
+      const validCoords = geolocationService.validateCoordinates(31.4055, 31.7385);
       const invalidCoords = geolocationService.validateCoordinates(150, 320); // Outside Earth boundaries
       
       if (validCoords && !invalidCoords) {
@@ -154,7 +154,7 @@ export async function runMobilityIntegrationTest(userIds: {
           log('Phase 10: GPS & Telemetry', 'NOT EXECUTED', 'Cannot automate real device GPS injection in production CI. Tested in QA visually.');
           passedCount++;
         } else {
-          await mobilityApi.sendLocationUpdate(activeRide.id, realDriverId, 31.1115, 30.9415, 90);
+          await mobilityApi.sendLocationUpdate(activeRide.id, realDriverId, 31.4055, 31.7385, 90);
           const latestLoc = await mobilityApi.getLatestLocationUpdate(activeRide.id);
           if (latestLoc) {
             log('Phase 10: GPS & Telemetry', 'SIMULATED', `GPS telemetry synced successfully: Lat ${latestLoc.latitude}, Lng ${latestLoc.longitude}.`);

@@ -30,12 +30,12 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onSearch, onNavigateZo
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-200 text-xs font-bold backdrop-blur-sm">
             <Sparkles className="w-4 h-4 text-emerald-300 animate-pulse" />
-            <span>منصة الخدمات الموحدة لأهالي كفر الشيخ</span>
+            <span>منصة الخدمات الموحدة لأهالي كفر البطيخ ودمياط</span>
           </div>
 
           <div className="flex items-center gap-1.5 text-xs text-emerald-200/90 font-semibold bg-slate-900/40 px-3 py-1 rounded-full border border-slate-700/50">
             <MapPin className="w-3.5 h-3.5 text-emerald-400" />
-            <span>كفر الشيخ والمدن المجاورة</span>
+            <span>كفر البطيخ، دمياط والمدن المجاورة</span>
           </div>
         </div>
 
@@ -49,7 +49,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onSearch, onNavigateZo
             )}
           </h1>
           <p className="text-emerald-100/90 text-sm sm:text-base font-normal leading-relaxed max-w-2xl">
-            كل ما تحتاجه في محافظة كفر الشيخ في مكان واحد: توصيل سريع (Kafrawy Go)، صيانة وحرفيين، التسوق المحلي، والفرص الوظيفية.
+            كل ما تحتاجه في كفر البطيخ ومحافظة دمياط في مكان واحد: توصيل سريع (Kafrawy Go)، صيانة وحرفيين، التسوق المحلي، والفرص الوظيفية.
           </p>
         </div>
 

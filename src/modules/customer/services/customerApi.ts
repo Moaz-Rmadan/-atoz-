@@ -14,7 +14,7 @@ const FALLBACK_CATEGORIES: ServiceCategory[] = [
   {
     id: 'cat-1',
     name_ar: 'صيانة منزلية وسباكة',
-    description_ar: 'خدمات السباكة والكهرباء والتكييف والتركيبات المنزلية بكفر الشيخ',
+    description_ar: 'خدمات السباكة والكهرباء والتكييف والتركيبات المنزلية بكفر البطيخ ودمياط',
     icon_url: 'wrench',
     is_active: true,
     sort_order: 1,
@@ -46,7 +46,7 @@ const FALLBACK_CATEGORIES: ServiceCategory[] = [
   {
     id: 'cat-5',
     name_ar: 'سيارات وميكانيكا',
-    description_ar: 'صيانة وميكانيكا السيارات ورعاية الطريق بكفر الشيخ',
+    description_ar: 'صيانة وميكانيكا السيارات ورعاية الطريق بكفر البطيخ ودمياط',
     icon_url: 'car',
     is_active: true,
     sort_order: 5,
@@ -93,7 +93,7 @@ const FALLBACK_SERVICES: CatalogService[] = [
     id: 'srv-4',
     category_id: 'cat-2',
     title_ar: 'تصليح غسالات أوتوماتيك وثلاجات',
-    description_ar: 'صيانة منزلية فورية للأجهزة الكهربائية بكفر الشيخ والمدن المجاورة.',
+    description_ar: 'صيانة منزلية فورية للأجهزة الكهربائية بكفر البطيخ والمدن المجاورة.',
     base_price_estimate: 250,
     is_active: true,
     category: FALLBACK_CATEGORIES[1],
@@ -349,8 +349,8 @@ export async function fetchCustomerRides(customerId: string): Promise<CustomerRi
         id: 'ride-01',
         customer_id: customerId,
         driver_id: 'drv-1',
-        pickup_address_text: 'شارع النصر، كفر الشيخ',
-        dropoff_address_text: 'جامعة كفر الشيخ، كلية الهندسة',
+        pickup_address_text: 'شارع النصر، كفر البطيخ',
+        dropoff_address_text: 'مستشفى كفر البطيخ المركزي',
         estimated_fare: 35,
         final_fare: 35,
         status: 'completed',
@@ -387,7 +387,7 @@ export async function fetchCustomerOrders(customerId: string): Promise<CustomerO
         status: 'delivered',
         notes: 'التسليم في الدور الثالث',
         created_at: new Date(Date.now() - 3600000 * 48).toISOString(),
-        merchant_store_name: 'سوبر ماركت الخضري كفر الشيخ',
+        merchant_store_name: 'سوبر ماركت الخضري كفر البطيخ',
       },
     ];
   }
@@ -421,7 +421,7 @@ export async function fetchCustomerJobApplications(
         id: 'app-01',
         job_post_id: 'job-1',
         applicant_id: customerId,
-        cover_letter: 'مهندس برمجيات شغوف بالعمل في كفر الشيخ',
+        cover_letter: 'مهندس برمجيات شغوف بالعمل في كفر البطيخ',
         status: 'submitted',
         created_at: new Date(Date.now() - 3600000 * 72).toISOString(),
         job_title: 'مطور برمجيات Full Stack',
@@ -444,7 +444,7 @@ export async function fetchCustomerJobApplications(
     return (data || []).map((item: any) => ({
       ...item,
       job_title: item.job_post?.title || 'وظيفة معلنة',
-      company_name: item.job_post?.employer?.company_name || 'شركة كفر الشيخ',
+      company_name: item.job_post?.employer?.company_name || 'شركة كفر البطيخ ودمياط',
     }));
   } catch (e) {
     return [];

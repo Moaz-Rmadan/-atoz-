@@ -171,7 +171,7 @@ export const ServiceRequestModal: React.FC<ServiceRequestModalProps> = ({
         {/* Saved Addresses Selector */}
         <div>
           <label className="block text-xs font-bold text-slate-700 mb-1">
-            عنوان تنفيذ الخدمة بكفر الشيخ
+            عنوان تنفيذ الخدمة بكفر البطيخ
           </label>
           <select
             value={selectedAddressId}
@@ -192,7 +192,7 @@ export const ServiceRequestModal: React.FC<ServiceRequestModalProps> = ({
           <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3 animation-fade-in">
             <div className="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
               <Plus className="w-4 h-4" />
-              <span>إضافة عنوان تنفيذ جديد في كفر الشيخ</span>
+              <span>إضافة عنوان تنفيذ جديد في كفر البطيخ</span>
             </div>
             
             <div className="grid grid-cols-3 gap-2">

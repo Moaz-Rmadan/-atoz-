@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS public.job_posts (
     title VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
     job_type public.job_type_enum NOT NULL DEFAULT 'full_time',
-    location_text VARCHAR(255) NOT NULL DEFAULT 'كفر الشيخ',
+    location_text VARCHAR(255) NOT NULL DEFAULT 'كفر البطيخ',
     salary_range_text VARCHAR(100),
     is_active BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

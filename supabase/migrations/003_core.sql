@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS public.addresses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     profile_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     title VARCHAR(100) NOT NULL DEFAULT 'العنوان',
-    city VARCHAR(100) NOT NULL DEFAULT 'كفر الشيخ',
+    city VARCHAR(100) NOT NULL DEFAULT 'كفر البطيخ',
     street_address TEXT NOT NULL,
     building_number VARCHAR(50),
     floor_number VARCHAR(50),

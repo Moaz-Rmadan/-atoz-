@@ -110,7 +110,7 @@ export const MarketplacePage: React.FC = () => {
               total_amount: 350,
               payment_method: 'cash',
               payment_status: 'paid',
-              delivery_address: 'كفر الشيخ، تقسيم المحافظة',
+              delivery_address: 'كفر البطيخ، دمياط',
               order_notes: '',
               created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
               updated_at: new Date(Date.now() - 86400000 * 2).toISOString(),
@@ -224,7 +224,7 @@ export const MarketplacePage: React.FC = () => {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-xl font-black text-slate-900">سوق كفراوي 🛍️</h2>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">تسوق من أفضل محلات كفر الشيخ</p>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">تسوق من أفضل محلات كفر البطيخ ودمياط</p>
           </div>
           <button
             onClick={() => setShowCart(true)}

@@ -16,39 +16,39 @@ interface DestinationSheetProps {
 
 const POPULAR_LOCATIONS = [
   {
-    id: 'kfs_uni',
-    title: 'جامعة كفر الشيخ',
-    desc: 'شارع الجيش، حي سخا، كفر الشيخ',
-    icon: GraduationCap,
-  },
-  {
-    id: 'kfs_insha',
-    title: 'مزلقان الانشاء والتعمير',
-    desc: 'شارع الخليفة المأمون، كفر الشيخ',
-    icon: MapPin,
-  },
-  {
-    id: 'kfs_hosp',
-    title: 'مستشفى كفر الشيخ العام',
-    desc: 'طريق المحلة، كفر الشيخ',
+    id: 'kb_hosp',
+    title: 'مستشفى كفر البطيخ المركزي',
+    desc: 'شارع المستشفى، كفر البطيخ، دمياط',
     icon: Building,
   },
   {
-    id: 'kfs_cityclub',
-    title: 'سيتي كلوب كفر الشيخ',
-    desc: 'امتداد طريق استاد كفر الشيخ',
+    id: 'kb_station',
+    title: 'محطة قطار كفر البطيخ',
+    desc: 'شارع المحطة، كفر البطيخ',
     icon: MapPin,
   },
   {
-    id: 'kfs_dawaran47',
-    title: 'دوران 47',
-    desc: 'تقسيم المحافظة، كفر الشيخ',
+    id: 'kb_council',
+    title: 'ميدان مجلس مدينة كفر البطيخ',
+    desc: 'شارع بنك التنمية، كفر البطيخ',
     icon: Navigation,
   },
   {
-    id: 'kfs_court',
-    title: 'مجمع المحاكم ومجلس الدولة',
-    desc: 'أمام ديوان عام المحافظة',
+    id: 'kb_bridge',
+    title: 'كوبري كفر البطيخ العلوي',
+    desc: 'طريق دمياط - كفر البطيخ - رأس البر',
+    icon: MapPin,
+  },
+  {
+    id: 'damietta_uni',
+    title: 'جامعة دمياط',
+    desc: 'دمياط الجديدة (مجاورة لكفر البطيخ)',
+    icon: GraduationCap,
+  },
+  {
+    id: 'damietta_court',
+    title: 'مجمع محاكم دمياط',
+    desc: 'شارع كورنيش النيل، دمياط',
     icon: Briefcase,
   },
 ];
@@ -180,7 +180,7 @@ export const DestinationSheet: React.FC<DestinationSheetProps> = ({
 
           {/* Quick Locations / Suggestions */}
           <div className="flex-1 overflow-y-auto pr-1 space-y-2 no-scrollbar">
-            <h4 className="text-xs font-bold text-slate-400 px-1 mb-2">أماكن مقترحة في كفر الشيخ</h4>
+            <h4 className="text-xs font-bold text-slate-400 px-1 mb-2">أماكن مقترحة في كفر البطيخ ودمياط</h4>
             {POPULAR_LOCATIONS.map((loc) => {
               const IconComp = loc.icon;
               return (

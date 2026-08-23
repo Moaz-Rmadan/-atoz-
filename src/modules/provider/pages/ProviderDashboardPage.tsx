@@ -202,7 +202,7 @@ export const ProviderDashboardPage: React.FC = () => {
     return (
       <DashboardLayout
         title="انضم كشريك حرفي موثق"
-        description="سجل مهاراتك الفنية وانضم لأفضل شبكة فنيين وحرفيين معتمدين بكفر الشيخ"
+        description="سجل مهاراتك الفنية وانضم لأفضل شبكة فنيين وحرفيين معتمدين بكفر البطيخ ودمياط"
         badge={
           <Badge variant="amber" icon={<Wrench className="w-3.5 h-3.5" />}>
             التسجيل المهني
@@ -213,7 +213,7 @@ export const ProviderDashboardPage: React.FC = () => {
           <CardHeader>
             <CardTitle>تقديم طلب الانضمام إلى كفراوي صيانة</CardTitle>
             <CardDescription>
-              املأ البيانات التالية لإنشاء ملفك المهني وسيتم فحص هويتك وتفعيل استقبال الطلبات في منطقتك بكفر الشيخ.
+              املأ البيانات التالية لإنشاء ملفك المهني وسيتم فحص هويتك وتفعيل استقبال الطلبات في منطقتك بكفر البطيخ ودمياط.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -258,7 +258,7 @@ export const ProviderDashboardPage: React.FC = () => {
                   required
                   value={bio}
                   onChange={(e) => setBio(e.target.value)}
-                  placeholder="مثال: فني سباكة بخبرة تزيد عن 8 سنوات في كفر الشيخ، متخصص في كشف التسريبات وصيانة تأسيس الحمامات وشبكات مياه الشرب بقطع غيار أصلية..."
+                  placeholder="مثال: فني سباكة بخبرة تزيد عن 8 سنوات في كفر البطيخ ودمياط، متخصص في كشف التسريبات وصيانة تأسيس الحمامات وشبكات مياه الشرب بقطع غيار أصلية..."
                   className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
                 <p className="text-[10px] text-slate-400 mt-1">يجب ألا تقل النبذة عن 15 حرفاً لتتمكن من تقديم الطلب.</p>
@@ -304,7 +304,7 @@ export const ProviderDashboardPage: React.FC = () => {
             <p className="text-xs text-slate-600 italic font-medium">"{providerProfile.bio}"</p>
           </div>
           <p className="text-[10px] text-emerald-700 bg-emerald-50 py-1.5 px-3 rounded-lg inline-block border border-emerald-100 font-bold">
-            سيتم تفعيل حسابك وإخطارك بإشعار فوري وتنبيه للبدء في استقبال طلبات كفر الشيخ فور الموافقة!
+            سيتم تفعيل حسابك وإخطارك بإشعار فوري وتنبيه للبدء في استقبال طلبات كفر البطيخ ودمياط فور الموافقة!
           </p>
         </Card>
       </DashboardLayout>
@@ -341,7 +341,7 @@ export const ProviderDashboardPage: React.FC = () => {
           <div className="space-y-1">
             <h2 className="text-base font-bold text-slate-900">تم تعليق الحساب مؤقتاً</h2>
             <p className="text-xs text-slate-500 leading-relaxed">
-              تم تعليق حسابك المهني مؤقتاً من قبل الإدارة بكفر الشيخ. يرجى مراجعة إشعاراتك أو التواصل مع المشرف لتسوية الموقف والالتزام بجودة العمل.
+              تم تعليق حسابك المهني مؤقتاً من قبل الإدارة بكفر البطيخ. يرجى مراجعة إشعاراتك أو التواصل مع المشرف لتسوية الموقف والالتزام بجودة العمل.
             </p>
           </div>
         </Card>
@@ -362,7 +362,7 @@ export const ProviderDashboardPage: React.FC = () => {
   return (
     <DashboardLayout
       title="منطقة الحرفيين والخدمات المنزلية"
-      description="إدارة طلبيات الصيانة المباشرة، استقبال الطلبات، وسجل الخدمات الفنية بكفر الشيخ"
+      description="إدارة طلبيات الصيانة المباشرة، استقبال الطلبات، وسجل الخدمات الفنية بكفر البطيخ ودمياط"
       badge={
         <Badge variant="emerald" icon={<CheckCircle2 className="w-3.5 h-3.5" />}>
           شريك حرفي معتمد وبجاهزية تامة
@@ -445,7 +445,7 @@ export const ProviderDashboardPage: React.FC = () => {
                   {availableRequests.length === 0 ? (
                     <EmptyState
                       title="لا توجد طلبات جديدة حالياً"
-                      description="سيتم سرد أي طلبات صيانة يرفعها العملاء في كفر الشيخ وتطابق تخصصاتك المسجلة هنا فوراً."
+                      description="سيتم سرد أي طلبات صيانة يرفعها العملاء في كفر البطيخ ودمياط وتطابق تخصصاتك المسجلة هنا فوراً."
                       icon={<Wrench className="w-8 h-8 text-slate-400" />}
                     />
                   ) : (

@@ -51,7 +51,7 @@ export const GoMap: React.FC<GoMapProps> = ({
   const [dimensions, setDimensions] = useState({ width: 400, height: 600 });
   const [zoom, setZoom] = useState(14);
   const [center, setCenter] = useState<Coords>(() => {
-    return userLocation || pickupLocation || { lat: 31.1107, lng: 30.9388 }; // Default Kafr El Sheikh
+    return userLocation || pickupLocation || { lat: 31.4055, lng: 31.7385 }; // Default Kafr El-Batikh, Damietta
   });
 
   // Pan interaction state

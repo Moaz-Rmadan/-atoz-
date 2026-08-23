@@ -442,13 +442,13 @@ export const ALL_30_FIELD_TESTS: FieldTestDefinition[] = [
     index: 9,
     name: 'Nominatim Geocoding Resolution',
     category: 'GEOCODING',
-    description: 'Tests resolving landmark text ("جامعة كفر الشيخ") to spatial coordinates.',
+    description: 'Tests resolving landmark text ("كفر البطيخ") to spatial coordinates.',
     requiresRealDevice: false,
     requiresRealtime: false,
     requiresDatabase: false,
     run: async (_ctx: FieldTestExecutionContext) => {
       try {
-        const query = 'جامعة كفر الشيخ';
+        const query = 'كفر البطيخ';
         const result = await mapService.geocode(query);
 
         if (!result.latitude || !result.longitude || !result.addressText) {
@@ -458,17 +458,17 @@ export const ALL_30_FIELD_TESTS: FieldTestDefinition[] = [
           };
         }
 
-        // Verify coordinates are approximately around Kafr El-Sheikh (Lat 31.0 - 31.2, Lng 30.8 - 31.1)
-        const inKafrElSheikh =
-          result.latitude >= 30.5 &&
+        // Verify coordinates are approximately around Kafr El-Batikh / Damietta (Lat 31.2 - 31.6, Lng 31.5 - 32.0)
+        const inKafrElBatikhRegion =
+          result.latitude >= 31.2 &&
           result.latitude <= 31.6 &&
-          result.longitude >= 30.5 &&
-          result.longitude <= 31.5;
+          result.longitude >= 31.5 &&
+          result.longitude <= 32.0;
 
         return {
-          status: inKafrElSheikh ? 'PASS' : 'WARN',
+          status: inKafrElBatikhRegion ? 'PASS' : 'WARN',
           message: `تم تحويل الوجهة بنجاح: ${result.addressText.substring(0, 40)}...`,
-          details: `Coordinates: [${result.latitude.toFixed(4)}, ${result.longitude.toFixed(4)}] | In Region: ${inKafrElSheikh}`,
+          details: `Coordinates: [${result.latitude.toFixed(4)}, ${result.longitude.toFixed(4)}] | In Region: ${inKafrElBatikhRegion}`,
         };
       } catch (err: any) {
         return {
@@ -488,18 +488,18 @@ export const ALL_30_FIELD_TESTS: FieldTestDefinition[] = [
     index: 10,
     name: 'OSRM Road Routing Engine',
     category: 'ROUTING',
-    description: 'Calculates real road driving polyline and travel duration between two points in Kafr El-Sheikh.',
+    description: 'Calculates real road driving polyline and travel duration between two points in Kafr El-Batikh / Damietta.',
     requiresRealDevice: false,
     requiresRealtime: false,
     requiresDatabase: false,
     run: async (_ctx: FieldTestExecutionContext) => {
       try {
-        // Point A: Kafr El-Sheikh Train Station (31.1145, 30.9392)
-        // Point B: Kafr El-Sheikh University (31.0967, 30.9432)
-        const startLat = 31.1145;
-        const startLng = 30.9392;
-        const endLat = 31.0967;
-        const endLng = 30.9432;
+        // Point A: Kafr El-Batikh Train Station (31.4055, 31.7385)
+        // Point B: Damietta Center / Al-Galaa (31.4175, 31.8144)
+        const startLat = 31.4055;
+        const startLng = 31.7385;
+        const endLat = 31.4175;
+        const endLng = 31.8144;
 
         const route = await mapService.calculateRoute(startLat, startLng, endLat, endLng);
 
@@ -544,10 +544,10 @@ export const ALL_30_FIELD_TESTS: FieldTestDefinition[] = [
     requiresDatabase: false,
     run: async (_ctx: FieldTestExecutionContext) => {
       try {
-        const startLat = 31.1145;
-        const startLng = 30.9392;
-        const endLat = 31.0967;
-        const endLng = 30.9432;
+        const startLat = 31.4055;
+        const startLng = 31.7385;
+        const endLat = 31.4175;
+        const endLng = 31.8144;
 
         const straightLineKm = calculateHaversineDistanceKm(startLat, startLng, endLat, endLng);
         const route = await mapService.calculateRoute(startLat, startLng, endLat, endLng);
@@ -761,12 +761,12 @@ export const ALL_30_FIELD_TESTS: FieldTestDefinition[] = [
 
       try {
         const testRide = await mobilityApi.requestRide(ctx.user.id, {
-          pickupText: 'نقطة اختبار - كفر الشيخ',
-          pickupLat: 31.1107,
-          pickupLng: 30.9388,
-          dropoffText: 'وجهة اختبار - الجامعة',
-          dropoffLat: 31.0967,
-          dropoffLng: 30.9432,
+          pickupText: 'نقطة اختبار - كفر البطيخ',
+          pickupLat: 31.4055,
+          pickupLng: 31.7385,
+          dropoffText: 'وجهة اختبار - دمياط',
+          dropoffLat: 31.4175,
+          dropoffLng: 31.8144,
           estimatedFare: 25,
         });
 

@@ -225,7 +225,7 @@ export const MerchantDashboardPage: React.FC = () => {
     return (
       <DashboardLayout
         title="تنشيط حساب التاجر (Marketplace)"
-        description="خطوة واحدة فقط تفصلك عن إطلاق متجرك الإلكتروني في كفر الشيخ وعرض منتجاتك للجمهور"
+        description="خطوة واحدة فقط تفصلك عن إطلاق متجرك الإلكتروني في كفر البطيخ ودمياط وعرض منتجاتك للجمهور"
         badge={
           <Badge variant="purple" icon={<Store className="w-3.5 h-3.5" />}>
             خطوات التسجيل والتأسيس
@@ -258,7 +258,7 @@ export const MerchantDashboardPage: React.FC = () => {
                 required
                 value={newStoreName}
                 onChange={(e) => setNewStoreName(e.target.value)}
-                placeholder="مثال: سوبر ماركت الهدى كفر الشيخ"
+                placeholder="مثال: سوبر ماركت الهدى كفر البطيخ"
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 transition-all text-slate-900"
               />
             </div>

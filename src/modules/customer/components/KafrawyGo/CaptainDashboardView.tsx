@@ -62,7 +62,7 @@ export const CaptainDashboardView: React.FC<CaptainDashboardViewProps> = ({
         </div>
         <h3 className="text-lg font-black text-slate-900 mb-1">انضم لأسطول كباتن كفراوي</h3>
         <p className="text-xs text-slate-500 font-medium leading-relaxed mb-6 max-w-xs">
-          ضاعف دخلك اليومي وسجل سيارتك أو مركبتك في أكبر منصة نقل ذكي في محافظة كفر الشيخ.
+          ضاعف دخلك اليومي وسجل سيارتك أو مركبتك في أكبر منصة نقل ذكي في كفر البطيخ ودمياط.
         </p>
         <button
           onClick={onRegisterClick}
@@ -220,7 +220,7 @@ export const CaptainDashboardView: React.FC<CaptainDashboardViewProps> = ({
           <div>
             <h4 className="font-black text-sm text-slate-900">{isOnline ? 'أنت متصل بالإنترنت' : 'أنت غير متصل'}</h4>
             <p className="text-[11px] text-slate-400 font-medium">
-              {isOnline ? 'جاهز لاستقبال طلبات الركاب في كفر الشيخ' : 'اضغط للاتصال واستقبال طلبات الرحلات'}
+              {isOnline ? 'جاهز لاستقبال طلبات الركاب في كفر البطيخ ودمياط' : 'اضغط للاتصال واستقبال طلبات الرحلات'}
             </p>
           </div>
         </div>

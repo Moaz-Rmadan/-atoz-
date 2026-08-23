@@ -25,7 +25,7 @@ INSERT INTO public.permissions (code, module, description_ar) VALUES
     ('admin:all', 'admin', 'صلاحيات الإشراف الشامل والتنفيذي')
 ON CONFLICT (code) DO NOTHING;
 
--- 3. Seed Service Categories (كفر الشيخ والمدن المجاورة)
+-- 3. Seed Service Categories (كفر البطيخ والمدن المجاورة)
 INSERT INTO public.service_categories (name_ar, description_ar, icon_url, sort_order) VALUES
     ('صيانة منزلية وسباكة', 'خدمات السباكة والكهرباء والتكييف والتركيبات المنزلية', 'wrench', 1),
     ('أجهزة كهربائية وإلكترونيات', 'تصليح الثلاجات، الغسالات، والشاشات والأجهزة الإلكترونية', 'tv', 2),
