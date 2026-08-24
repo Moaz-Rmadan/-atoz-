@@ -37,6 +37,10 @@ import {
   Activity,
   X,
   Eye,
+  Banknote,
+  Coins,
+  DollarSign,
+  Wallet,
 } from 'lucide-react';
 
 type AdminTab =
@@ -69,6 +73,8 @@ export const AdminRbacPage: React.FC = () => {
   const [providers, setProviders] = useState<AdminProvider[]>([]);
   const [drivers, setDrivers] = useState<AdminDriver[]>([]);
   const [adminRides, setAdminRides] = useState<any[]>([]);
+  const [cashAnalytics, setCashAnalytics] = useState<any>(null);
+  const [cashPeriod, setCashPeriod] = useState<'all' | 'today' | 'yesterday' | 'this_week' | 'this_month'>('all');
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [serviceRequests, setServiceRequests] = useState<AdminServiceRequest[]>([]);
   const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
@@ -109,12 +115,14 @@ export const AdminRbacPage: React.FC = () => {
         const allProviders = await adminApi.getProviders();
         setProviders(allProviders);
       } else if (activeTab === 'drivers') {
-        const [allDrivers, allRides] = await Promise.all([
+        const [allDrivers, allRides, cashStats] = await Promise.all([
           adminApi.getDrivers(),
-          mobilityApi.getAllRidesForAdmin()
+          mobilityApi.getAllRidesForAdmin(),
+          mobilityApi.getCashOperationsAnalytics(cashPeriod)
         ]);
         setDrivers(allDrivers);
         setAdminRides(allRides);
+        setCashAnalytics(cashStats);
       } else if (activeTab === 'orders') {
         const allOrders = await adminApi.getOrders();
         setOrders(allOrders);
@@ -301,6 +309,30 @@ export const AdminRbacPage: React.FC = () => {
         }
       }
     );
+  };
+
+  // Cash Collection Action
+  const handleMarkCashCollected = async (rideId: string, amount: number) => {
+    triggerConfirmation(
+      'تأكيد تحصيل المبلغ نقداً',
+      `هل تريد تأكيد استلام مبلغ ${amount} ج.م نقداً لهذه الرحلة وتحديث سجل العمليات وحساب عمولة المنصة (15%)؟`,
+      async () => {
+        try {
+          await mobilityApi.markCashPaymentReceived(rideId);
+          await loadData();
+          showToast('success', 'تم تسجيل استلام المبلغ نقداً وتحديث الرصيد وسجل العمليات بنجاح.');
+        } catch (error: any) {
+          console.error('[MARK CASH COLLECTED]', error);
+          showToast('error', error.message || 'فشل تسجيل استلام المبلغ نقداً.');
+        }
+      }
+    );
+  };
+
+  const handleChangeCashPeriod = async (period: 'all' | 'today' | 'yesterday' | 'this_week' | 'this_month') => {
+    setCashPeriod(period);
+    const data = await mobilityApi.getCashOperationsAnalytics(period);
+    setCashAnalytics(data);
   };
 
   // Role Permissions mapping toggler
@@ -811,7 +843,159 @@ export const AdminRbacPage: React.FC = () => {
 
         {/* VIEW: DRIVERS */}
         {!isLoading && activeTab === 'drivers' && (
-          <div className="space-y-6">
+          <div className="space-y-8">
+            {/* CASH OPERATIONS CONTROL ROOM */}
+            <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-xl border border-slate-800 space-y-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-2xl flex items-center justify-center">
+                    <Banknote className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-black text-white flex items-center gap-2">
+                      غرفة عمليات التحصيل النقدي (CASH ONLY PILOT)
+                      <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded-full border border-emerald-500/30 font-bold">
+                        عمولة المنصة 15%
+                      </span>
+                    </h2>
+                    <p className="text-xs text-slate-400 font-medium mt-0.5">
+                      متابعة تحصيلات الكاش الميدانية وأرصدة الكباتن ومستحقات المنصة التلقائية
+                    </p>
+                  </div>
+                </div>
+
+                {/* Period Filter */}
+                <div className="flex items-center gap-1.5 bg-slate-800/80 p-1.5 rounded-2xl border border-slate-700">
+                  {[
+                    { id: 'all', label: 'الكل' },
+                    { id: 'today', label: 'اليوم' },
+                    { id: 'yesterday', label: 'أمس' },
+                    { id: 'this_week', label: 'هذا الأسبوع' },
+                    { id: 'this_month', label: 'هذا الشهر' },
+                  ].map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => handleChangeCashPeriod(p.id as any)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        cashPeriod === p.id
+                          ? 'bg-emerald-500 text-slate-950 shadow-md'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Metric Cards Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div className="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-4">
+                  <span className="text-[11px] text-slate-400 font-bold block">إجمالي الرحلات</span>
+                  <div className="text-xl font-black text-white mt-1 font-mono">
+                    {cashAnalytics?.total_rides || adminRides.length}
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-medium">رحلة مسجلة</span>
+                </div>
+
+                <div className="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-4">
+                  <span className="text-[11px] text-slate-400 font-bold block">الرحلات المكتملة</span>
+                  <div className="text-xl font-black text-emerald-400 mt-1 font-mono">
+                    {cashAnalytics?.completed_rides || adminRides.filter((r) => r.status === 'completed').length}
+                  </div>
+                  <span className="text-[10px] text-emerald-400/80 font-medium">مكتملة وناجحة</span>
+                </div>
+
+                <div className="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-4">
+                  <span className="text-[11px] text-slate-400 font-bold block">إجمالي قيمة الرحلات</span>
+                  <div className="text-xl font-black text-white mt-1 font-mono">
+                    {cashAnalytics?.total_amount ||
+                      adminRides
+                        .filter((r) => r.status === 'completed')
+                        .reduce((sum, r) => sum + (r.final_fare || r.estimated_fare || 0), 0)}{' '}
+                    <span className="text-xs">ج.م</span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-medium">إجمالي التكلفة</span>
+                </div>
+
+                <div className="bg-emerald-950/40 border border-emerald-800/60 rounded-2xl p-4">
+                  <span className="text-[11px] text-emerald-300 font-bold block">المبالغ المحصلة كاش</span>
+                  <div className="text-xl font-black text-emerald-300 mt-1 font-mono">
+                    {cashAnalytics?.collected_amount ||
+                      adminRides
+                        .filter((r) => r.payment_status === 'paid_cash')
+                        .reduce((sum, r) => sum + (r.final_fare || r.estimated_fare || 0), 0)}{' '}
+                    <span className="text-xs">ج.م</span>
+                  </div>
+                  <span className="text-[10px] text-emerald-400/80 font-medium">مسددة نقدياً بالكامل</span>
+                </div>
+
+                <div className="bg-blue-950/40 border border-blue-800/60 rounded-2xl p-4">
+                  <span className="text-[11px] text-blue-300 font-bold block">عمولة المنصة (15%)</span>
+                  <div className="text-xl font-black text-blue-300 mt-1 font-mono">
+                    {cashAnalytics?.total_commission ||
+                      Math.round(
+                        adminRides
+                          .filter((r) => r.status === 'completed')
+                          .reduce((sum, r) => sum + (r.final_fare || r.estimated_fare || 0), 0) * 0.15
+                      )}{' '}
+                    <span className="text-xs">ج.م</span>
+                  </div>
+                  <span className="text-[10px] text-blue-400/80 font-medium">إيرادات كفراوي جو</span>
+                </div>
+
+                <div className="bg-amber-950/40 border border-amber-800/60 rounded-2xl p-4">
+                  <span className="text-[11px] text-amber-300 font-bold block">أرباح الكباتن الصافية</span>
+                  <div className="text-xl font-black text-amber-300 mt-1 font-mono">
+                    {cashAnalytics?.total_driver_earnings ||
+                      Math.round(
+                        adminRides
+                          .filter((r) => r.status === 'completed')
+                          .reduce((sum, r) => sum + (r.final_fare || r.estimated_fare || 0), 0) * 0.85
+                      )}{' '}
+                    <span className="text-xs">ج.م</span>
+                  </div>
+                  <span className="text-[10px] text-amber-400/80 font-medium">مستحقات السائقين 85%</span>
+                </div>
+              </div>
+
+              {/* Driver Cash Balances Table */}
+              {cashAnalytics?.driver_balances && cashAnalytics.driver_balances.length > 0 && (
+                <div className="mt-4 bg-slate-800/70 border border-slate-700/80 rounded-2xl p-4">
+                  <h4 className="text-xs font-black text-slate-200 mb-3 flex items-center gap-2">
+                    <Wallet className="w-4 h-4 text-emerald-400" />
+                    أرصدة الكاش بحوزة الكباتن (Driver Cash Balances)
+                  </h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right text-xs">
+                      <thead>
+                        <tr className="text-slate-400 border-b border-slate-700/80 pb-2">
+                          <th className="pb-2 font-bold">اسم الكابتن</th>
+                          <th className="pb-2 font-bold">الهاتف</th>
+                          <th className="pb-2 font-bold">الرحلات</th>
+                          <th className="pb-2 font-bold text-emerald-400">إجمالي الكاش المحصل</th>
+                          <th className="pb-2 font-bold text-amber-400">صافي ربح الكابتن (85%)</th>
+                          <th className="pb-2 font-bold text-blue-400">مستحق للمنصة (15%)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-700/40">
+                        {cashAnalytics.driver_balances.map((b: any, idx: number) => (
+                          <tr key={idx} className="hover:bg-slate-700/20">
+                            <td className="py-2.5 font-bold text-white">{b.driver_name}</td>
+                            <td className="py-2.5 text-slate-400 font-mono">{b.driver_phone || '-'}</td>
+                            <td className="py-2.5 font-bold text-slate-300">{b.completed_rides}</td>
+                            <td className="py-2.5 font-bold text-emerald-300 font-mono">{b.cash_collected} ج.م</td>
+                            <td className="py-2.5 font-bold text-amber-300 font-mono">{b.driver_net_earnings} ج.م</td>
+                            <td className="py-2.5 font-bold text-blue-300 font-mono">{b.platform_commission_due} ج.م</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div>
               <h1 className="text-xl font-bold text-slate-900">اعتماد ومتابعة سائقي Kafrawy Go</h1>
               <p className="text-xs text-slate-500 mt-1">التحقق من الهوية الوطنية ورقم رخص القيادة لتأمين حماية الركاب والرحلات</p>
@@ -892,9 +1076,9 @@ export const AdminRbacPage: React.FC = () => {
               <div>
                 <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                   <Activity className="w-5 h-5 text-blue-600 animate-pulse" />
-                  مراقبة رحلات Kafrawy Go النشطة والتاريخية
+                  مراقبة رحلات Kafrawy Go والتحصيل النقدي
                 </h2>
-                <p className="text-xs text-slate-500 mt-1">تتبع المسارات المباشرة للرحلات وأسعار التوصيل وحالة الأسطول والطلبات بكفر البطيخ ودمياط</p>
+                <p className="text-xs text-slate-500 mt-1">تتبع المسارات المباشرة للرحلات وأسعار التوصيل وحالة الدفع النقدي (Cash Only)</p>
               </div>
 
               <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
@@ -904,42 +1088,76 @@ export const AdminRbacPage: React.FC = () => {
                       <tr className="bg-slate-50/50 border-b border-slate-200">
                         <th className="p-4 text-xs font-black text-slate-700">الراكب (العميل)</th>
                         <th className="p-4 text-xs font-black text-slate-700">الكابتن المستلم</th>
-                        <th className="p-4 text-xs font-black text-slate-700">المركبة المستخدمة</th>
                         <th className="p-4 text-xs font-black text-slate-700">خط السير (العنوان)</th>
-                        <th className="p-4 text-xs font-black text-slate-700">التكلفة (Estimated)</th>
-                        <th className="p-4 text-xs font-black text-slate-700">الحالة</th>
+                        <th className="p-4 text-xs font-black text-slate-700">التكلفة (المبلغ)</th>
+                        <th className="p-4 text-xs font-black text-slate-700">حالة الرحلة</th>
+                        <th className="p-4 text-xs font-black text-slate-700">حالة الكاش</th>
                         <th className="p-4 text-xs font-black text-slate-700">تاريخ الطلب</th>
+                        <th className="p-4 text-xs font-black text-slate-700 text-left">إجراء الكاش</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {adminRides.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="p-8 text-center text-xs text-slate-400 font-bold">
+                          <td colSpan={8} className="p-8 text-center text-xs text-slate-400 font-bold">
                             لا توجد أي رحلات مسجلة في أسطول كفراوي جو حالياً.
                           </td>
                         </tr>
                       ) : (
-                        adminRides.map((ride) => (
-                          <tr key={ride.id} className="hover:bg-slate-50/30 transition-colors text-xs font-medium text-slate-600">
-                            <td className="p-4 font-bold text-slate-950">{ride.customer_name || 'راكب كفراوي'}</td>
-                            <td className="p-4 font-bold text-slate-900">{ride.driver_name || 'لم يحدد بعد'}</td>
-                            <td className="p-4">{ride.vehicle_info || 'بدون سيارة'}</td>
-                            <td className="p-4 max-w-xs truncate">
-                              <span className="text-emerald-700 block">من: {ride.pickup_address_text}</span>
-                              <span className="text-rose-700 block">إلى: {ride.dropoff_address_text}</span>
-                            </td>
-                            <td className="p-4 text-blue-700 font-black">{ride.final_fare || ride.estimated_fare || 'تحديد لاحق'} ج.م</td>
-                            <td className="p-4">
-                              {ride.status === 'requested' && <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-700 text-xs font-bold rounded-lg border border-amber-200">بانتظار كابتن</span>}
-                              {ride.status === 'driver_assigned' && <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-lg border border-blue-200">الكابتن قادم</span>}
-                              {ride.status === 'arrived' && <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200">وصل الموقع</span>}
-                              {ride.status === 'in_transit' && <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-50 text-purple-700 text-xs font-bold rounded-lg border border-purple-200">في الطريق</span>}
-                              {ride.status === 'completed' && <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-50 text-slate-600 text-xs font-bold rounded-lg border border-slate-200">مكتملة</span>}
-                              {ride.status === 'cancelled' && <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-50 text-rose-700 text-xs font-bold rounded-lg border border-rose-200">ملغاة</span>}
-                            </td>
-                            <td className="p-4 font-mono text-slate-400">{new Date(ride.created_at).toLocaleString('ar-EG')}</td>
-                          </tr>
-                        ))
+                        adminRides.map((ride) => {
+                          const fare = ride.final_fare || ride.estimated_fare || 0;
+                          return (
+                            <tr key={ride.id} className="hover:bg-slate-50/30 transition-colors text-xs font-medium text-slate-600">
+                              <td className="p-4 font-bold text-slate-950">{ride.customer_name || 'راكب كفراوي'}</td>
+                              <td className="p-4 font-bold text-slate-900">{ride.driver_name || 'لم يحدد بعد'}</td>
+                              <td className="p-4 max-w-xs truncate">
+                                <span className="text-emerald-700 block">من: {ride.pickup_address_text}</span>
+                                <span className="text-rose-700 block">إلى: {ride.dropoff_address_text}</span>
+                              </td>
+                              <td className="p-4 text-emerald-700 font-black font-mono">
+                                {fare} ج.م
+                                <span className="block text-[10px] text-slate-400 font-sans font-normal">
+                                  عمولة: {Math.round(fare * 0.15)} ج.م
+                                </span>
+                              </td>
+                              <td className="p-4">
+                                {ride.status === 'requested' && <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-700 text-xs font-bold rounded-lg border border-amber-200">بانتظار كابتن</span>}
+                                {ride.status === 'driver_assigned' && <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-lg border border-blue-200">الكابتن قادم</span>}
+                                {ride.status === 'arrived' && <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200">وصل الموقع</span>}
+                                {ride.status === 'in_transit' && <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-50 text-purple-700 text-xs font-bold rounded-lg border border-purple-200">في الطريق</span>}
+                                {ride.status === 'completed' && <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-800 text-xs font-bold rounded-lg border border-emerald-300">مكتملة</span>}
+                                {ride.status === 'cancelled' && <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-50 text-rose-700 text-xs font-bold rounded-lg border border-rose-200">ملغاة</span>}
+                              </td>
+                              <td className="p-4">
+                                {ride.payment_status === 'paid_cash' ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[11px] font-bold rounded-md border border-emerald-300">
+                                    <Banknote className="w-3 h-3" />
+                                    تم استلام الكاش
+                                  </span>
+                                ) : ride.status === 'completed' ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-800 text-[11px] font-bold rounded-md border border-amber-300">
+                                    بانتظار تحصيل الكاش
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 text-[11px]">كاش عند الوصول</span>
+                                )}
+                              </td>
+                              <td className="p-4 font-mono text-slate-400">{new Date(ride.created_at).toLocaleString('ar-EG')}</td>
+                              <td className="p-4 text-left">
+                                {ride.status === 'completed' && ride.payment_status !== 'paid_cash' && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleMarkCashCollected(ride.id, fare)}
+                                    className="text-[10px] py-1 bg-emerald-600 hover:bg-emerald-700 text-white h-auto cursor-pointer flex items-center gap-1"
+                                  >
+                                    <Banknote className="w-3 h-3" />
+                                    تأكيد التحصيل
+                                  </Button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>

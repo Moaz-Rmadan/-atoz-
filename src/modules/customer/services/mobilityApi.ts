@@ -45,8 +45,8 @@ export interface Ride {
   driver_earning?: number | null;
   platform_commission?: number | null;
   commission_rate?: number | null;
-  payment_method?: 'cash' | 'wallet' | 'card' | 'online';
-  payment_status?: 'pending' | 'completed' | 'failed' | 'refunded' | 'cancelled';
+  payment_method?: 'cash';
+  payment_status?: 'pending' | 'pending_cash_collection' | 'paid_cash' | 'completed' | 'failed' | 'refunded' | 'cancelled';
   cancelled_by?: string | null;
   cancellation_reason?: string | null;
   cancelled_at?: string | null;
@@ -954,5 +954,74 @@ export const mobilityApi = {
       driver_phone: r.driver?.profiles?.phone_number,
       vehicle_info: r.vehicle ? `${r.vehicle.make} ${r.vehicle.model} (${r.vehicle.plate_number})` : undefined
     }));
+  },
+
+  /**
+   * Mark cash payment received (Driver or Admin)
+   */
+  async markCashPaymentReceived(rideId: string): Promise<{ success: boolean; amount?: number }> {
+    if (!isSupabaseConfigured()) {
+      const index = mockRides.findIndex(r => r.id === rideId);
+      if (index !== -1) {
+        mockRides[index].payment_status = 'paid_cash';
+        mockRides[index].updated_at = new Date().toISOString();
+      }
+      return { success: true };
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('mark_cash_payment_received', {
+        p_ride_id: rideId
+      });
+
+      if (error) {
+        console.error('Error in mark_cash_payment_received RPC:', error);
+        throw new Error(error.message);
+      }
+
+      return data || { success: true };
+    } catch (e: any) {
+      console.error('Error recording cash collection:', e);
+      throw new Error(e.message || 'فشل تسجيل استلام المبلغ نقداً.');
+    }
+  },
+
+  /**
+   * Fetch Cash Operations and Driver Balances Analytics for Admin
+   */
+  async getCashOperationsAnalytics(period: 'all' | 'today' | 'yesterday' | 'this_week' | 'this_month' = 'all'): Promise<any> {
+    if (!isSupabaseConfigured()) {
+      const completed = mockRides.filter(r => r.status === 'completed');
+      const totalAmount = completed.reduce((sum, r) => sum + (r.final_fare || r.estimated_fare || 0), 0);
+      const commission = Math.round(totalAmount * 0.15 * 100) / 100;
+      const driverEarnings = Math.round((totalAmount - commission) * 100) / 100;
+      return {
+        period,
+        total_rides: mockRides.length,
+        completed_rides: completed.length,
+        total_amount: totalAmount,
+        collected_amount: totalAmount,
+        pending_collection: 0,
+        total_commission: commission,
+        total_driver_earnings: driverEarnings,
+        driver_balances: []
+      };
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('get_cash_operations_analytics', {
+        p_period: period
+      });
+
+      if (error) {
+        console.error('Error fetching cash analytics:', error);
+        return null;
+      }
+
+      return data;
+    } catch (e) {
+      console.error('Error querying cash analytics RPC:', e);
+      return null;
+    }
   }
 };
