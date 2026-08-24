@@ -16,8 +16,12 @@ import {
   Shield,
   Activity,
   ChevronLeft,
+  XCircle,
+  Banknote,
+  Navigation,
 } from 'lucide-react';
 import { DriverProfile, Ride, RideStatus, Vehicle } from '../../services/mobilityApi';
+import { DriverEarningsView } from './DriverEarningsView';
 
 interface CaptainDashboardViewProps {
   driverProfile: DriverProfile | null;
@@ -33,6 +37,9 @@ interface CaptainDashboardViewProps {
   onRefreshRides: () => void;
   isRefreshing: boolean;
   onRegisterClick: () => void;
+  onCancelActiveRide?: () => void;
+  onOpenCashModal?: (ride: Ride) => void;
+  isAccepting?: boolean;
 }
 
 export const CaptainDashboardView: React.FC<CaptainDashboardViewProps> = ({
@@ -49,24 +56,30 @@ export const CaptainDashboardView: React.FC<CaptainDashboardViewProps> = ({
   onRefreshRides,
   isRefreshing,
   onRegisterClick,
+  onCancelActiveRide,
+  onOpenCashModal,
+  isAccepting = false,
 }) => {
+  const [showEarningsView, setShowEarningsView] = useState(false);
+
   const activeVehicles = vehicles.filter((v) => v.is_active);
   const primaryVehicle =
     vehicles.find((v) => v.id === selectedVehicleId) || activeVehicles[0];
-  // Not registered as Captain fallback
+
+  // 1. Not registered as Captain fallback
   if (!driverProfile) {
     return (
       <div className="bg-white rounded-3xl p-6 shadow-xl border border-slate-100 text-center flex flex-col items-center dir-rtl">
         <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mb-4 border border-amber-200">
           <Shield className="w-8 h-8 text-amber-600" />
         </div>
-        <h3 className="text-lg font-black text-slate-900 mb-1">انضم لأسطول كباتن كفراوي</h3>
+        <h3 className="text-lg font-black text-slate-900 mb-1">انضم لأسطول كباتن كفراوي Go</h3>
         <p className="text-xs text-slate-500 font-medium leading-relaxed mb-6 max-w-xs">
-          ضاعف دخلك اليومي وسجل سيارتك أو مركبتك في أكبر منصة نقل ذكي في كفر البطيخ ودمياط.
+          ضاعف دخلك وسجل مركبتك في كفر البطيخ ودمياط مع أحدث نظام توصيل نقدي آمن وعادل.
         </p>
         <button
           onClick={onRegisterClick}
-          className="w-full py-4 bg-slate-900 hover:bg-black text-white font-bold text-sm rounded-2xl shadow-lg transition-all active:scale-98 cursor-pointer"
+          className="w-full py-4 bg-slate-900 hover:bg-black text-white font-bold text-sm rounded-2xl shadow-lg transition-all active:scale-[0.98] cursor-pointer"
         >
           تقديم طلب انضمام ككابتن
         </button>
@@ -74,30 +87,62 @@ export const CaptainDashboardView: React.FC<CaptainDashboardViewProps> = ({
     );
   }
 
-  // Pending / Rejected Status
+  // 2. Pending / Rejected / Suspended Status
   if (driverProfile.approval_status !== 'approved') {
+    const isPending = driverProfile.approval_status === 'pending';
+    const isSuspended = driverProfile.approval_status === 'suspended';
+
     return (
       <div className="bg-white rounded-3xl p-6 shadow-xl border border-slate-100 text-center flex flex-col items-center dir-rtl">
-        <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mb-4 border border-amber-200">
-          <Clock className="w-8 h-8 text-amber-500 animate-spin" />
+        <div
+          className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-4 border ${
+            isPending
+              ? 'bg-amber-50 border-amber-200 text-amber-500'
+              : 'bg-rose-50 border-rose-200 text-rose-500'
+          }`}
+        >
+          {isPending ? (
+            <Clock className="w-8 h-8 animate-spin" />
+          ) : (
+            <AlertTriangle className="w-8 h-8" />
+          )}
         </div>
         <h3 className="text-lg font-black text-slate-900 mb-1">
-          {driverProfile.approval_status === 'pending' ? 'طلبك قيد المراجعة والتدقيق' : 'حساب الكابتن غير مفعل'}
+          {isPending
+            ? 'حسابك قيد المراجعة والتدقيق'
+            : isSuspended
+            ? 'حساب الكابتن موقوف مؤقتاً'
+            : 'تم رفض طلب الانضمام'}
         </h3>
         <p className="text-xs text-slate-500 font-medium leading-relaxed mb-4 max-w-xs">
-          {driverProfile.approval_status === 'pending'
-            ? 'يقوم فريق الجودة بمراجعة رخصة القيادة وبيانات المركبة. سيتم تفعيل حسابك فور استيفاء الشروط.'
-            : 'تم رفض الطلب أو إيقاف الحساب مؤقتاً. يرجى التواصل مع الدعم الفني لمراجعة المستندات.'}
+          {isPending
+            ? 'يقوم فريق الإدارة بمراجعة رخصة القيادة وبيانات المركبة. سيتم تفعيل حسابك فور استيفاء شروط الاعتماد.'
+            : isSuspended
+            ? 'تم إيقاف الحساب مؤقتاً من قبل الإدارة. يرجى التواصل مع الدعم الفني لتسوية الرصيد أو تحديث المستندات.'
+            : 'تم رفض طلب الانضمام لعدم استيفاء الشروط المطلوبة. يمكنك التواصل مع الإدارة للمراجعة.'}
         </p>
         <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 text-xs font-bold text-slate-600 w-full mb-4">
-          رقم التسجيل: <span className="font-mono">{driverProfile.license_number}</span>
+          رقم الرخصة: <span className="font-mono">{driverProfile.license_number}</span>
         </div>
       </div>
     );
   }
 
-  // Active Ride Execution for Captain
+  // 3. Sub-View: Detailed Earnings & Balance
+  if (showEarningsView) {
+    return (
+      <DriverEarningsView
+        driverId={driverProfile.id}
+        onBack={() => setShowEarningsView(false)}
+      />
+    );
+  }
+
+  // 4. Active Ride Execution for Captain
   if (activeRide) {
+    const isCompletedPendingCash =
+      activeRide.status === 'completed' && activeRide.payment_status === 'pending_cash_collection';
+
     return (
       <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden dir-rtl">
         {/* Status Header */}
@@ -107,12 +152,15 @@ export const CaptainDashboardView: React.FC<CaptainDashboardViewProps> = ({
               ? 'bg-amber-600'
               : activeRide.status === 'arrived'
               ? 'bg-emerald-600'
-              : 'bg-blue-600'
+              : activeRide.status === 'in_transit'
+              ? 'bg-blue-600'
+              : 'bg-slate-900'
           }`}
         >
           {activeRide.status === 'driver_assigned' && 'توجه الآن إلى موقع العميل 📍'}
-          {activeRide.status === 'arrived' && 'أنت في نقطة الالتقاء - بانتظار صعود العميل'}
-          {activeRide.status === 'in_transit' && 'الرحلة جارية - توجه نحو الوجهة المحددة'}
+          {activeRide.status === 'arrived' && 'أنت في نقطة الالتقاء - بانتظار صعود العميل ⌛'}
+          {activeRide.status === 'in_transit' && 'الرحلة جارية - توجه نحو الوجهة المحددة 🚗'}
+          {activeRide.status === 'completed' && 'وصلت بالسلامة - يرجى تحصيل الأجرة نقداً 💵'}
         </div>
 
         <div className="p-5 space-y-4">
@@ -131,7 +179,8 @@ export const CaptainDashboardView: React.FC<CaptainDashboardViewProps> = ({
             {activeRide.customer_phone && (
               <a
                 href={`tel:${activeRide.customer_phone}`}
-                className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shadow-xs hover:bg-emerald-100"
+                className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shadow-xs hover:bg-emerald-100 cursor-pointer"
+                title="اتصال بالعميل"
               >
                 <Phone className="w-4 h-4" />
               </a>
@@ -164,7 +213,7 @@ export const CaptainDashboardView: React.FC<CaptainDashboardViewProps> = ({
                 className="text-xl font-black text-emerald-700"
                 style={{ fontFamily: "'JetBrains Mono', monospace" }}
               >
-                {activeRide.estimated_fare} <span className="text-xs font-ibm-plex">ج.م</span>
+                {activeRide.customer_total || activeRide.final_fare || activeRide.estimated_fare} <span className="text-xs font-ibm-plex">ج.م</span>
               </div>
             </div>
             <span className="text-xs font-bold text-emerald-700 bg-white px-2.5 py-1 rounded-lg border border-emerald-200">
@@ -174,21 +223,47 @@ export const CaptainDashboardView: React.FC<CaptainDashboardViewProps> = ({
 
           {/* State Machine Action Button */}
           {activeRide.status === 'driver_assigned' && (
-            <button
-              onClick={onAdvanceRideStatus}
-              className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm rounded-2xl shadow-lg transition-all active:scale-[0.98] cursor-pointer"
-            >
-              تأكيد الوصول لموقع العميل
-            </button>
+            <div className="space-y-2">
+              <button
+                onClick={onAdvanceRideStatus}
+                className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm rounded-2xl shadow-lg transition-all active:scale-[0.98] cursor-pointer"
+              >
+                تأكيد الوصول لموقع العميل (وصلت)
+              </button>
+
+              {onCancelActiveRide && (
+                <button
+                  type="button"
+                  onClick={onCancelActiveRide}
+                  className="w-full py-2.5 text-rose-600 hover:bg-rose-50 font-bold text-xs rounded-xl border border-rose-200 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <XCircle className="w-4 h-4" />
+                  <span>إلغاء الرحلة لتعذر الالتقاء</span>
+                </button>
+              )}
+            </div>
           )}
 
           {activeRide.status === 'arrived' && (
-            <button
-              onClick={onAdvanceRideStatus}
-              className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl shadow-lg transition-all active:scale-[0.98] cursor-pointer"
-            >
-              بدء الرحلة (صعد العميل)
-            </button>
+            <div className="space-y-2">
+              <button
+                onClick={onAdvanceRideStatus}
+                className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-sm rounded-2xl shadow-lg transition-all active:scale-[0.98] cursor-pointer"
+              >
+                بدء الرحلة (صعد العميل)
+              </button>
+
+              {onCancelActiveRide && (
+                <button
+                  type="button"
+                  onClick={onCancelActiveRide}
+                  className="w-full py-2.5 text-rose-600 hover:bg-rose-50 font-bold text-xs rounded-xl border border-rose-200 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <XCircle className="w-4 h-4" />
+                  <span>إلغاء الرحلة (لم يحضر العميل)</span>
+                </button>
+              )}
+            </div>
           )}
 
           {activeRide.status === 'in_transit' && (
@@ -196,7 +271,17 @@ export const CaptainDashboardView: React.FC<CaptainDashboardViewProps> = ({
               onClick={onAdvanceRideStatus}
               className="w-full py-4 bg-slate-900 hover:bg-black text-white font-black text-sm rounded-2xl shadow-lg transition-all active:scale-[0.98] cursor-pointer"
             >
-              إنهاء الرحلة واستلام {activeRide.estimated_fare} ج.م
+              إنهاء الرحلة واستلام الأجرة نقداً
+            </button>
+          )}
+
+          {activeRide.status === 'completed' && onOpenCashModal && (
+            <button
+              onClick={() => onOpenCashModal(activeRide)}
+              className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm rounded-2xl shadow-lg transition-all active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2"
+            >
+              <Banknote className="w-5 h-5" />
+              <span>تأكيد استلام الكاش من العميل</span>
             </button>
           )}
         </div>
@@ -204,7 +289,7 @@ export const CaptainDashboardView: React.FC<CaptainDashboardViewProps> = ({
     );
   }
 
-  // Default Online / Offline Captain Dashboard
+  // 5. Default Online / Offline Captain Dashboard
   return (
     <div className="flex flex-col gap-4 dir-rtl">
       {/* Online / Offline Toggle Card */}
@@ -218,7 +303,9 @@ export const CaptainDashboardView: React.FC<CaptainDashboardViewProps> = ({
             <Power className="w-6 h-6" />
           </div>
           <div>
-            <h4 className="font-black text-sm text-slate-900">{isOnline ? 'أنت متصل بالإنترنت' : 'أنت غير متصل'}</h4>
+            <h4 className="font-black text-sm text-slate-900">
+              {isOnline ? 'أنت متصل بالإنترنت (Online)' : 'أنت غير متصل (Offline)'}
+            </h4>
             <p className="text-[11px] text-slate-400 font-medium">
               {isOnline ? 'جاهز لاستقبال طلبات الركاب في كفر البطيخ ودمياط' : 'اضغط للاتصال واستقبال طلبات الرحلات'}
             </p>
@@ -233,39 +320,44 @@ export const CaptainDashboardView: React.FC<CaptainDashboardViewProps> = ({
               : 'bg-emerald-600 text-white hover:bg-emerald-700'
           }`}
         >
-          {isOnline ? 'إيقاف' : 'اتصال'}
+          {isOnline ? 'إيقاف الاتصال' : 'بدء الاتصال'}
         </button>
       </div>
 
-      {/* Daily Performance Metrics */}
+      {/* Daily Performance & Finance Quick Cards */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="bg-slate-900 rounded-3xl p-4 text-white shadow-lg relative overflow-hidden">
+        <div
+          onClick={() => setShowEarningsView(true)}
+          className="bg-slate-900 rounded-3xl p-4 text-white shadow-lg relative overflow-hidden cursor-pointer hover:bg-slate-800 transition-all active:scale-[0.98]"
+        >
           <div className="absolute -left-3 -bottom-3 opacity-10">
             <DollarSign className="w-20 h-20" />
           </div>
-          <span className="text-[11px] font-bold text-slate-400 block mb-1">أرباح اليوم</span>
+          <div className="flex justify-between items-center mb-1">
+            <span className="text-[11px] font-bold text-slate-400">أرباحي والمالية</span>
+            <ChevronLeft className="w-3.5 h-3.5 text-slate-400" />
+          </div>
           <div
             className="text-2xl font-black text-emerald-400"
             style={{ fontFamily: "'JetBrains Mono', monospace" }}
           >
-            1,240 <span className="text-xs font-ibm-plex text-white">ج.م</span>
+            عرض الأرباح
           </div>
+          <span className="text-[10px] text-slate-400 mt-1 block">رصيد الكاش والمستحقات</span>
         </div>
 
-        <div className="bg-white rounded-3xl p-4 border border-slate-100 shadow-sm">
-          <span className="text-[11px] font-bold text-slate-400 block mb-1">الرحلات المكتملة</span>
+        <div className="bg-white rounded-3xl p-4 border border-slate-100 shadow-sm flex flex-col justify-between">
+          <span className="text-[11px] font-bold text-slate-400 block mb-1">تقييم الكابتن</span>
           <div className="flex items-baseline justify-between">
-            <div
-              className="text-2xl font-black text-slate-900"
-              style={{ fontFamily: "'JetBrains Mono', monospace" }}
-            >
-              14
+            <div className="flex items-center gap-1 text-base font-black text-amber-500">
+              <Star className="w-4 h-4 fill-current" />
+              <span>{driverProfile.rating_average ? Number(driverProfile.rating_average).toFixed(1) : '5.0'}</span>
             </div>
-            <div className="flex items-center gap-1 text-xs font-bold text-amber-500">
-              <Star className="w-3.5 h-3.5 fill-current" />
-              <span>4.9</span>
-            </div>
+            <span className="text-[10px] font-bold text-slate-400">ممتاز</span>
           </div>
+          <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md font-bold mt-2 text-center">
+            حساب معتمد ✓
+          </span>
         </div>
       </div>
 
@@ -322,7 +414,7 @@ export const CaptainDashboardView: React.FC<CaptainDashboardViewProps> = ({
             <button
               onClick={onRefreshRides}
               disabled={isRefreshing}
-              className="text-xs font-bold text-slate-500 hover:text-slate-900 flex items-center gap-1"
+              className="text-xs font-bold text-slate-500 hover:text-slate-900 flex items-center gap-1 cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
               <span>تحديث</span>
@@ -336,7 +428,7 @@ export const CaptainDashboardView: React.FC<CaptainDashboardViewProps> = ({
               </div>
               <h5 className="font-bold text-sm text-slate-900 mb-1">لا توجد طلبات جديدة الآن</h5>
               <p className="text-xs text-slate-400 font-medium">
-                سنقوم بتنبيهك تلقائياً بمجرد حجز أي عميل لرحلة بالقرب منك.
+                سنقوم بتنبيهك تلقائياً بمجرد حجز أي عميل لرحلة بالقرب منك في كفر البطيخ أو دمياط.
               </p>
             </div>
           ) : (
@@ -373,9 +465,17 @@ export const CaptainDashboardView: React.FC<CaptainDashboardViewProps> = ({
                 <div className="flex gap-2">
                   <button
                     onClick={() => onAcceptRide(ride.id)}
-                    className="flex-1 py-3 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl shadow-sm transition-all active:scale-[0.98] cursor-pointer"
+                    disabled={isAccepting}
+                    className="flex-1 py-3 bg-slate-900 hover:bg-black text-white font-bold text-xs rounded-xl shadow-sm transition-all active:scale-[0.98] cursor-pointer disabled:opacity-60 flex items-center justify-center gap-1.5"
                   >
-                    قبول الرحلة فوراً
+                    {isAccepting ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>جاري قبول الرحلة...</span>
+                      </>
+                    ) : (
+                      <span>قبول الرحلة فوراً</span>
+                    )}
                   </button>
                 </div>
               </div>
@@ -385,7 +485,7 @@ export const CaptainDashboardView: React.FC<CaptainDashboardViewProps> = ({
       ) : (
         <div className="bg-white rounded-3xl p-6 border border-slate-100 text-center shadow-xs">
           <p className="text-xs text-slate-500 font-medium">
-            أنت في وضع غير متصل. قم بتفعيل زر الاتصال بالأعلى لبدء استقبال الركاب.
+            أنت في وضع غير متصل. قم بالضغط على زر "بدء الاتصال" بالأعلى لبدء استقبال طلبات الركاب.
           </p>
         </div>
       )}

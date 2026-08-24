@@ -31,6 +31,7 @@ import {
   Bell,
   Sparkles,
   ArrowRight,
+  WifiOff,
 } from 'lucide-react';
 
 // Modular Kafrawy Go Components
@@ -44,6 +45,8 @@ import { CaptainDashboardView } from '../components/KafrawyGo/CaptainDashboardVi
 import { GpsPermissionSheet } from '../components/KafrawyGo/GpsPermissionSheet';
 import { FieldTestConsole } from '../components/KafrawyGo/FieldTestConsole/FieldTestConsole';
 import { CaptainVehiclesView } from '../components/KafrawyGo/CaptainVehiclesView';
+import { CancelRideModal } from '../components/KafrawyGo/CancelRideModal';
+import { DriverCashCollectionModal } from '../components/KafrawyGo/DriverCashCollectionModal';
 
 interface KafrawyGoPageProps {
   onBackToDashboard: () => void;
@@ -86,6 +89,10 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
   const [driverLocation, setDriverLocation] = useState<LocationUpdate | null>(null);
   const [liveETA, setLiveETA] = useState<{ distance: number; minutes: number } | null>(null);
   const [completedRideForRating, setCompletedRideForRating] = useState<Ride | null>(null);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelModalRole, setCancelModalRole] = useState<'customer' | 'driver'>('customer');
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
   // Driver Profile & Captain State
   const [driverProfile, setDriverProfile] = useState<DriverProfile | null>(null);
@@ -95,6 +102,10 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
   const [availableRides, setAvailableRides] = useState<Ride[]>([]);
   const [driverHistory, setDriverHistory] = useState<Ride[]>([]);
   const [isRefreshingAvailable, setIsRefreshingAvailable] = useState(false);
+  const [isAcceptingRide, setIsAcceptingRide] = useState(false);
+  const [cashCollectionRide, setCashCollectionRide] = useState<Ride | null>(null);
+  const [showDriverCashModal, setShowDriverCashModal] = useState(false);
+  const [isCollectingCash, setIsCollectingCash] = useState(false);
 
   // Driver Onboarding Registration Form State
   const [nationalId, setNationalId] = useState('');
@@ -168,6 +179,29 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
     }
   }, [activeCustomerRide, driverLocation]);
 
+  // Monitor network status
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      success('تم استعادة الاتصال بالإنترنت.');
+      if (user) {
+        loadInitialMobilityData();
+      }
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      info('الاتصال بالإنترنت مقطوع حالياً.');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [user]);
+
   // Load initial backend data
   useEffect(() => {
     if (user) {
@@ -191,6 +225,83 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
       if (interval) clearInterval(interval);
     };
   }, [driverProfile]);
+
+  // Driver Heartbeat when Online & Approved
+  useEffect(() => {
+    if (!driverProfile || driverProfile.approval_status !== 'approved' || !driverProfile.is_online) {
+      return;
+    }
+
+    // Immediate heartbeat ping on coming online
+    mobilityApi.driverHeartbeat(driverProfile.id, userCoords?.lat, userCoords?.lng);
+
+    const heartbeatInterval = setInterval(() => {
+      mobilityApi.driverHeartbeat(driverProfile.id, userCoords?.lat, userCoords?.lng);
+    }, 30000); // every 30 seconds
+
+    return () => {
+      clearInterval(heartbeatInterval);
+    };
+  }, [driverProfile?.id, driverProfile?.approval_status, driverProfile?.is_online, userCoords?.lat, userCoords?.lng]);
+
+  // Driver Realtime Subscription (for Available Rides updates)
+  useEffect(() => {
+    if (!driverProfile || driverProfile.approval_status !== 'approved' || !driverProfile.is_online) {
+      return;
+    }
+
+    const availableChannel = supabase
+      .channel('public:driver_incoming_rides')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'rides',
+        },
+        () => {
+          loadAvailableRides();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(availableChannel);
+    };
+  }, [driverProfile?.id, driverProfile?.approval_status, driverProfile?.is_online]);
+
+  // Driver Active Ride Realtime Subscription (detect passenger cancellation or status changes)
+  useEffect(() => {
+    if (!activeDriverRide || !driverProfile) return;
+
+    const rideChannel = supabase
+      .channel(`public:driver_active_ride:${activeDriverRide.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'rides',
+          filter: `id=eq.${activeDriverRide.id}`,
+        },
+        async (payload: any) => {
+          const updated = payload.new as Ride;
+          if (updated.status === 'cancelled') {
+            info('تم إلغاء الرحلة من قِبل العميل.');
+            driverLocationService.stopTracking();
+            setActiveDriverRide(null);
+            const dHist = await mobilityApi.getDriverRideHistory(driverProfile.id);
+            setDriverHistory(dHist);
+            loadAvailableRides();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(rideChannel);
+    };
+  }, [activeDriverRide?.id, driverProfile?.id]);
 
   // Handle active customer ride tracking updates
   useEffect(() => {
@@ -395,13 +506,47 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
     }
   };
 
-  // Passenger Cancel Ride
-  const handleCancelRideAsCustomer = async () => {
+  // Passenger Cancel Ride - Trigger reason modal
+  const handleCancelRideAsCustomer = () => {
     if (!activeCustomerRide || !user) return;
-    if (!window.confirm('هل أنت متأكد من رغبتك في إلغاء طلب الرحلة الحالي؟')) return;
+    setCancelModalRole('customer');
+    setShowCancelModal(true);
+  };
+
+  // Driver Cancel Ride - Trigger reason modal
+  const handleCancelRideAsDriver = () => {
+    if (!activeDriverRide || !driverProfile) return;
+    setCancelModalRole('driver');
+    setShowCancelModal(true);
+  };
+
+  const handleConfirmCancelWithReason = async (reason: string) => {
+    // 1. Driver Cancellation Flow
+    if (cancelModalRole === 'driver' && activeDriverRide && driverProfile) {
+      setIsCancelling(true);
+      try {
+        await mobilityApi.cancelRide(activeDriverRide.id, driverProfile.id, reason);
+        success('تم إلغاء الرحلة بنجاح.');
+        driverLocationService.stopTracking();
+        setActiveDriverRide(null);
+        setShowCancelModal(false);
+        const dHist = await mobilityApi.getDriverRideHistory(driverProfile.id);
+        setDriverHistory(dHist);
+        loadAvailableRides();
+      } catch (e: any) {
+        toastError(e.message || 'فشل إلغاء الرحلة.');
+      } finally {
+        setIsCancelling(false);
+      }
+      return;
+    }
+
+    // 2. Customer Cancellation Flow
+    if (!activeCustomerRide || !user) return;
+    setIsCancelling(true);
 
     try {
-      await mobilityApi.cancelRide(activeCustomerRide.id, user.id);
+      await mobilityApi.cancelRide(activeCustomerRide.id, user.id, reason);
       success('تم إلغاء الرحلة بنجاح.');
       setActiveCustomerRide(null);
       setDriverLocation(null);
@@ -409,11 +554,14 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
       setRouteCoordinates([]);
       setFareBreakdown(null);
       stopTracker();
+      setShowCancelModal(false);
 
       const cHist = await mobilityApi.getCustomerRideHistory(user.id);
       setCustomerHistory(cHist);
     } catch (e: any) {
       toastError(e.message || 'فشل إلغاء الرحلة.');
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -439,14 +587,16 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
     }
   };
 
-  // Driver Accept Ride
+  // Driver Accept Ride (Double-click protected)
   const handleAcceptRide = async (rideId: string) => {
     if (!driverProfile) return;
+    if (isAcceptingRide) return;
     if (!selectedVehicleId) {
       toastError('يرجى تسجيل وتفعيل مركبة أولاً لتتمكن من تشغيل الرحلات.');
       return;
     }
 
+    setIsAcceptingRide(true);
     try {
       await mobilityApi.acceptRide(rideId, driverProfile.id, selectedVehicleId);
       success('تهانينا! لقد قبلت الرحلة. توجه الآن لنقطة التقاء العميل.');
@@ -475,10 +625,12 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
     } catch (e: any) {
       toastError(e.message || 'فشل قبول الرحلة، ربما تم قبولها من كابتن آخر.');
       loadAvailableRides();
+    } finally {
+      setIsAcceptingRide(false);
     }
   };
 
-  // Driver Advance status
+  // Driver Advance status & Cash collection flow
   const handleAdvanceStatus = async () => {
     if (!activeDriverRide || !driverProfile) return;
 
@@ -493,7 +645,7 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
       successMsg = 'بدأت الرحلة الآن! توجه نحو الوجهة المحددة للعميل.';
     } else if (activeDriverRide.status === 'in_transit') {
       nextStatus = 'completed';
-      successMsg = 'تم إكمال الرحلة بنجاح! العميل سيسدد الأجرة نقداً.';
+      successMsg = 'تم إكمال الرحلة بنجاح! يرجى استلام الأجرة نقداً من العميل.';
     } else {
       return;
     }
@@ -504,6 +656,14 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
 
       if (nextStatus === 'completed') {
         driverLocationService.stopTracking();
+        const completedRideRecord = await mobilityApi.getRide(activeDriverRide.id);
+        const finalRideData = completedRideRecord || {
+          ...activeDriverRide,
+          status: 'completed',
+          payment_status: 'pending_cash_collection' as const,
+        };
+        setCashCollectionRide(finalRideData);
+        setShowDriverCashModal(true);
         setActiveDriverRide(null);
         const dHist = await mobilityApi.getDriverRideHistory(driverProfile.id);
         setDriverHistory(dHist);
@@ -528,6 +688,30 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
       }
     } catch (e: any) {
       toastError(e.message || 'فشل تحديث حالة الرحلة.');
+    }
+  };
+
+  // Cash payment confirmation handler
+  const handleConfirmCashPayment = async (rideId: string) => {
+    setIsCollectingCash(true);
+    try {
+      await mobilityApi.markCashPaymentReceived(rideId);
+      success('تم تسجيل استلام المبلغ بنجاح.');
+      if (cashCollectionRide) {
+        setCashCollectionRide({
+          ...cashCollectionRide,
+          payment_status: 'paid_cash',
+        });
+      }
+      if (driverProfile) {
+        const dHist = await mobilityApi.getDriverRideHistory(driverProfile.id);
+        setDriverHistory(dHist);
+      }
+    } catch (e: any) {
+      toastError(e.message || 'فشل تسجيل استلام الكاش.');
+      throw e;
+    } finally {
+      setIsCollectingCash(false);
     }
   };
 
@@ -593,53 +777,75 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
       />
 
       {/* 2. TOP FLOATING APP BAR */}
-      <header className="absolute top-3 inset-x-3 z-30 flex items-center justify-between max-w-lg mx-auto pointer-events-auto">
-        {/* Back Button */}
-        <button
-          onClick={onBackToDashboard}
-          className="w-11 h-11 bg-white/95 backdrop-blur-md rounded-2xl shadow-md border border-slate-200/80 flex items-center justify-center text-slate-800 hover:bg-slate-50 active:scale-90 transition-all cursor-pointer"
-          title="العودة للرئيسية"
-        >
-          <ChevronRight className="w-5 h-5" />
-        </button>
+      <div className="absolute top-3 inset-x-3 z-30 flex flex-col gap-2 max-w-lg mx-auto pointer-events-auto">
+        {!isOnline && (
+          <div className="w-full bg-amber-500 text-slate-950 px-3.5 py-1.5 rounded-xl shadow-md flex items-center justify-between text-xs font-bold animate-pulse">
+            <div className="flex items-center gap-1.5">
+              <WifiOff className="w-4 h-4" />
+              <span>لا يوجد اتصال بالإنترنت (أنت في وضع عدم الاتصال)</span>
+            </div>
+            <button
+              onClick={() => {
+                if (navigator.onLine) {
+                  setIsOnline(true);
+                  if (user) loadInitialMobilityData();
+                }
+              }}
+              className="underline text-[11px] font-black"
+            >
+              إعادة المحاولة
+            </button>
+          </div>
+        )}
 
-        {/* Tab Switcher (Passenger / Captain / History) */}
-        <div className="bg-white/95 backdrop-blur-md p-1 rounded-2xl shadow-md border border-slate-200/80 flex items-center gap-1">
+        <header className="flex items-center justify-between">
+          {/* Back Button */}
           <button
-            onClick={() => setActiveTab('passenger')}
-            className={`px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-              activeTab === 'passenger'
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100/60'
-            }`}
+            onClick={onBackToDashboard}
+            className="w-11 h-11 bg-white/95 backdrop-blur-md rounded-2xl shadow-md border border-slate-200/80 flex items-center justify-center text-slate-800 hover:bg-slate-50 active:scale-90 transition-all cursor-pointer"
+            title="العودة للرئيسية"
           >
-            الركاب
+            <ChevronRight className="w-5 h-5" />
           </button>
-          <button
-            onClick={() => setActiveTab('captain')}
-            className={`px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-              activeTab === 'captain' || activeTab === 'register_captain' || activeTab === 'captain_vehicles'
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100/60'
-            }`}
-          >
-            الكباتن
-          </button>
-        </div>
 
-        {/* History / Audit Button */}
-        <button
-          onClick={() => setActiveTab('qa_audit')}
-          className={`w-11 h-11 rounded-2xl shadow-md border flex items-center justify-center active:scale-90 transition-all cursor-pointer ${
-            activeTab === 'qa_audit'
-              ? 'bg-slate-900 text-white border-slate-900'
-              : 'bg-white/95 backdrop-blur-md text-slate-700 border-slate-200/80 hover:bg-slate-50'
-          }`}
-          title="سجل الرحلات والجودة"
-        >
-          <History className="w-5 h-5" />
-        </button>
-      </header>
+          {/* Tab Switcher (Passenger / Captain / History) */}
+          <div className="bg-white/95 backdrop-blur-md p-1 rounded-2xl shadow-md border border-slate-200/80 flex items-center gap-1">
+            <button
+              onClick={() => setActiveTab('passenger')}
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                activeTab === 'passenger'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100/60'
+              }`}
+            >
+              الركاب
+            </button>
+            <button
+              onClick={() => setActiveTab('captain')}
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                activeTab === 'captain' || activeTab === 'register_captain' || activeTab === 'captain_vehicles'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100/60'
+              }`}
+            >
+              الكباتن
+            </button>
+          </div>
+
+          {/* History / Audit Button */}
+          <button
+            onClick={() => setActiveTab('qa_audit')}
+            className={`w-11 h-11 rounded-2xl shadow-md border flex items-center justify-center active:scale-90 transition-all cursor-pointer ${
+              activeTab === 'qa_audit'
+                ? 'bg-slate-900 text-white border-slate-900'
+                : 'bg-white/95 backdrop-blur-md text-slate-700 border-slate-200/80 hover:bg-slate-50'
+            }`}
+            title="سجل الرحلات والجودة"
+          >
+            <History className="w-5 h-5" />
+          </button>
+        </header>
+      </div>
 
       {/* 3. FLOATING CONTENT & BOTTOM SHEETS LAYER */}
       <div className="absolute inset-x-0 bottom-0 z-30 flex flex-col justify-end pointer-events-none max-w-lg mx-auto p-4 pb-6">
@@ -728,6 +934,12 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
                   onRefreshRides={loadAvailableRides}
                   isRefreshing={isRefreshingAvailable}
                   onRegisterClick={() => setActiveTab('register_captain')}
+                  onCancelActiveRide={handleCancelRideAsDriver}
+                  onOpenCashModal={(ride) => {
+                    setCashCollectionRide(ride);
+                    setShowDriverCashModal(true);
+                  }}
+                  isAccepting={isAcceptingRide}
                 />
               </motion.div>
             )}
@@ -929,6 +1141,27 @@ export const KafrawyGoPage: React.FC<KafrawyGoPageProps> = ({ onBackToDashboard 
           setShowDestinationSheet(true);
         }}
         isLoading={isLocating}
+      />
+
+      {/* Ride Cancellation Reason Modal */}
+      <CancelRideModal
+        isOpen={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        onConfirmCancel={handleConfirmCancelWithReason}
+        isLoading={isCancelling}
+        role={cancelModalRole}
+      />
+
+      {/* Driver Cash Collection Modal */}
+      <DriverCashCollectionModal
+        isOpen={showDriverCashModal}
+        ride={cashCollectionRide}
+        onConfirmCashReceived={handleConfirmCashPayment}
+        onClose={() => {
+          setShowDriverCashModal(false);
+          setCashCollectionRide(null);
+        }}
+        isLoading={isCollectingCash}
       />
     </div>
   );

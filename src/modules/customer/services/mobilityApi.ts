@@ -62,6 +62,22 @@ export interface Ride {
   vehicle_info?: string;
 }
 
+export type DispatchStatus = 'offered' | 'accepted' | 'rejected' | 'expired' | 'cancelled' | 'failed';
+
+export interface DispatchAttempt {
+  id: string;
+  ride_id: string;
+  driver_id: string;
+  status: DispatchStatus;
+  offered_at: string;
+  expires_at: string;
+  responded_at?: string | null;
+  response?: string | null;
+  created_at: string;
+  updated_at: string;
+  ride?: Ride;
+}
+
 export interface LocationUpdate {
   id: number;
   ride_id: string;
@@ -397,6 +413,32 @@ export const mobilityApi = {
         throw new Error('لا يمكن حذف هذه المركبة لوجود رحلات سابقة مرتبطة بها. يمكنك تعطيلها بدلاً من الحذف.');
       }
       throw new Error(error.message || 'فشل حذف المركبة.');
+    }
+  },
+
+  /**
+   * Send Driver Heartbeat (Updates last_seen in DB)
+   */
+  async driverHeartbeat(driverId: string, latitude?: number, longitude?: number): Promise<boolean> {
+    if (!isSupabaseConfigured()) {
+      return true;
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('driver_heartbeat', {
+        p_driver_id: driverId,
+        p_latitude: latitude || null,
+        p_longitude: longitude || null
+      });
+
+      if (error) {
+        console.warn('Driver heartbeat error:', error.message);
+        return false;
+      }
+      return data?.success || true;
+    } catch (e) {
+      console.warn('Driver heartbeat failed:', e);
+      return false;
     }
   },
 
@@ -799,6 +841,32 @@ export const mobilityApi = {
   },
 
   /**
+   * Get single ride by ID
+   */
+  async getRide(rideId: string): Promise<Ride | null> {
+    if (!isSupabaseConfigured()) {
+      return mockRides.find(r => r.id === rideId) || null;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('rides')
+        .select('*')
+        .eq('id', rideId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Error fetching ride:', error);
+        return null;
+      }
+      return data;
+    } catch (e) {
+      console.error('Error in getRide:', e);
+      return null;
+    }
+  },
+
+  /**
    * Submit live location updates (Drivers only)
    */
   async sendLocationUpdate(rideId: string, driverId: string, latitude: number, longitude: number, heading: number = 0): Promise<void> {
@@ -987,6 +1055,106 @@ export const mobilityApi = {
   },
 
   /**
+   * Fetch Driver Financial Summary & Cash Balance Owed to Platform
+   */
+  async getDriverFinancialSummary(driverId: string): Promise<{
+    today: { gross: number; commission: number; net: number; count: number };
+    thisWeek: { gross: number; commission: number; net: number; count: number };
+    thisMonth: { gross: number; commission: number; net: number; count: number };
+    totalCashOwed: number;
+    totalCashCollected: number;
+    totalNetEarned: number;
+    completedRides: Ride[];
+  }> {
+    if (!isSupabaseConfigured()) {
+      const completed = mockRides.filter(r => r.driver_id === driverId && r.status === 'completed');
+      const gross = completed.reduce((s, r) => s + (r.final_fare || r.estimated_fare || 0), 0);
+      const commission = Math.round(gross * 0.15 * 100) / 100;
+      const net = Math.round((gross - commission) * 100) / 100;
+      return {
+        today: { gross, commission, net, count: completed.length },
+        thisWeek: { gross, commission, net, count: completed.length },
+        thisMonth: { gross, commission, net, count: completed.length },
+        totalCashOwed: commission,
+        totalCashCollected: gross,
+        totalNetEarned: net,
+        completedRides: completed
+      };
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('rides')
+        .select('*')
+        .eq('driver_id', driverId)
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      const rides: Ride[] = data || [];
+
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      
+      const dayOfWeek = (now.getDay() + 1) % 7; // Sunday=0 -> 1
+      const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek).getTime();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+      const computeGroup = (filteredRides: Ride[]) => {
+        let gross = 0;
+        let commission = 0;
+        let net = 0;
+        for (const r of filteredRides) {
+          const total = r.customer_total || r.final_fare || r.estimated_fare || 0;
+          const comm = r.platform_commission !== undefined && r.platform_commission !== null
+            ? r.platform_commission
+            : Math.round(total * 0.15 * 100) / 100;
+          const earn = r.driver_earning !== undefined && r.driver_earning !== null
+            ? r.driver_earning
+            : Math.round((total - comm) * 100) / 100;
+
+          gross += total;
+          commission += comm;
+          net += earn;
+        }
+        return {
+          gross: Math.round(gross * 100) / 100,
+          commission: Math.round(commission * 100) / 100,
+          net: Math.round(net * 100) / 100,
+          count: filteredRides.length
+        };
+      };
+
+      const todayRides = rides.filter(r => new Date(r.created_at).getTime() >= startOfToday);
+      const weekRides = rides.filter(r => new Date(r.created_at).getTime() >= startOfWeek);
+      const monthRides = rides.filter(r => new Date(r.created_at).getTime() >= startOfMonth);
+
+      const allStats = computeGroup(rides);
+
+      return {
+        today: computeGroup(todayRides),
+        thisWeek: computeGroup(weekRides),
+        thisMonth: computeGroup(monthRides),
+        totalCashOwed: allStats.commission,
+        totalCashCollected: allStats.gross,
+        totalNetEarned: allStats.net,
+        completedRides: rides
+      };
+    } catch (e) {
+      console.error('Error fetching driver financial summary:', e);
+      return {
+        today: { gross: 0, commission: 0, net: 0, count: 0 },
+        thisWeek: { gross: 0, commission: 0, net: 0, count: 0 },
+        thisMonth: { gross: 0, commission: 0, net: 0, count: 0 },
+        totalCashOwed: 0,
+        totalCashCollected: 0,
+        totalNetEarned: 0,
+        completedRides: []
+      };
+    }
+  },
+
+  /**
    * Fetch Cash Operations and Driver Balances Analytics for Admin
    */
   async getCashOperationsAnalytics(period: 'all' | 'today' | 'yesterday' | 'this_week' | 'this_month' = 'all'): Promise<any> {
@@ -1023,5 +1191,47 @@ export const mobilityApi = {
       console.error('Error querying cash analytics RPC:', e);
       return null;
     }
+  },
+
+  /**
+   * Respond to a dispatch offer (accept or reject)
+   */
+  async respondToDispatch(dispatchId: string, response: 'accepted' | 'rejected'): Promise<{ success: boolean; message: string; ride_id?: string }> {
+    if (!isSupabaseConfigured()) {
+      return { success: true, message: 'تم المعالجة بنجاح (وضع المعاينة)' };
+    }
+
+    const { data, error } = await supabase.rpc('driver_respond_to_dispatch', {
+      p_dispatch_id: dispatchId,
+      p_response: response
+    });
+
+    if (error) {
+      throw new Error(error.message || 'فشل الاستجابة لعرض الرحلة.');
+    }
+
+    return data as { success: boolean; message: string; ride_id?: string };
+  },
+
+  /**
+   * Fetch active dispatch attempts for driver
+   */
+  async getDispatchAttemptsForDriver(driverId: string): Promise<DispatchAttempt[]> {
+    if (!isSupabaseConfigured()) return [];
+
+    const { data, error } = await supabase
+      .from('dispatch_attempts')
+      .select('*, ride:rides(*)')
+      .eq('driver_id', driverId)
+      .eq('status', 'offered')
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching dispatch attempts:', error);
+      return [];
+    }
+
+    return (data || []) as DispatchAttempt[];
   }
 };

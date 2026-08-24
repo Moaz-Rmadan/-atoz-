@@ -71,7 +71,22 @@ export const RideCompletedModal: React.FC<RideCompletedModalProps> = ({
                 <Banknote className="w-4 h-4 text-slate-400" />
                 طريقة الدفع
               </span>
-              <span className="font-bold text-slate-800">نقداً للكابتن</span>
+              <span className="font-bold text-slate-800">نقداً للكابتن (Cash Only)</span>
+            </div>
+
+            {/* Cash Collection State Indicator */}
+            <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-bold">حالة التحصيل:</span>
+              {ride.payment_status === 'paid_cash' ? (
+                <span className="inline-flex items-center gap-1 text-emerald-700 font-black bg-emerald-100 px-2 py-0.5 rounded-md">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  تم استلام النقد
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-amber-800 font-bold bg-amber-100 px-2 py-0.5 rounded-md">
+                  يرجى تسليم المبلغ للكابتن
+                </span>
+              )}
             </div>
           </div>
 

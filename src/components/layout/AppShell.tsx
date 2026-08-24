@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
 import { motion, AnimatePresence } from 'motion/react';
@@ -12,8 +13,12 @@ import {
   MapPin,
   ChevronLeft,
   UserCheck,
-  ShieldCheck
+  ShieldCheck,
+  WifiOff,
+  CheckCircle2
 } from 'lucide-react';
+import { notificationService, AppNotification } from '../../services/notificationService';
+import { formatSafeTime } from '../../modules/admin/utils/dateUtils';
 
 export type ActiveView =
   | 'login'
@@ -50,24 +55,78 @@ export const AppShell: React.FC<AppShellProps> = ({
   children,
 }) => {
   const { user, isAuthenticated, isAdmin } = useAuth();
+  const { success: toastSuccess, warning: toastWarning } = useToast();
   const [isNotifDrawerOpen, setIsNotifDrawerOpen] = useState(false);
   const [isLocationSheetOpen, setIsLocationSheetOpen] = useState(false);
 
-  // Mock Notifications list for design shell
-  const [notifications, setNotifications] = useState([
-    {
-      id: '1',
-      title: 'أهلاً بك في كفراوي',
-      body: 'استكشف الخدمات المتاحة الآن في مدينتك.',
-      time: 'منذ 5 دقائق',
-      unread: true,
-      type: 'success',
-    }
-  ]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [realtimeError, setRealtimeError] = useState(false);
 
-  const unreadCount = notifications.filter((n) => n.unread).length;
-  const markAllNotifsAsRead = () => {
-    setNotifications(notifications.map((n) => ({ ...n, unread: false })));
+  useEffect(() => {
+    if (user?.id) {
+      loadUserNotifications();
+
+      const unsubscribe = notificationService.subscribeToNotifications(
+        user.id,
+        (newNotif) => {
+          setNotifications((prev) => [newNotif, ...prev]);
+          setUnreadCount((c) => c + 1);
+          setRealtimeError(false);
+          toastSuccess(newNotif.title, newNotif.message);
+        },
+        (err) => {
+          console.warn('Realtime notification warning:', err);
+          setRealtimeError(true);
+        }
+      );
+
+      return () => {
+        unsubscribe();
+      };
+    }
+  }, [user?.id]);
+
+  const loadUserNotifications = async () => {
+    if (!user?.id) return;
+    try {
+      const items = await notificationService.getNotifications(user.id);
+      setNotifications(items);
+      setUnreadCount(items.filter((i) => !i.is_read).length);
+      setRealtimeError(false);
+    } catch (err) {
+      console.error('Failed to load notifications:', err);
+    }
+  };
+
+  const markAllNotifsAsRead = async () => {
+    if (!user?.id) return;
+    try {
+      await notificationService.markAllAsRead(user.id);
+      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+      setUnreadCount(0);
+    } catch (err) {
+      console.error('Error marking all as read:', err);
+    }
+  };
+
+  const handleNotificationClick = async (notif: AppNotification) => {
+    if (!notif.is_read) {
+      try {
+        await notificationService.markAsRead(notif.id);
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === notif.id ? { ...n, is_read: true } : n))
+        );
+        setUnreadCount((c) => Math.max(0, c - 1));
+      } catch (err) {
+        console.error('Error marking single notification read:', err);
+      }
+    }
+
+    if (notif.ride_id) {
+      setIsNotifDrawerOpen(false);
+      onNavigate('customer_dashboard');
+    }
   };
 
   const bottomNavItems: NavItem[] = [
@@ -281,22 +340,45 @@ export const AppShell: React.FC<AppShellProps> = ({
               </div>
 
               <div className="flex-1 overflow-y-auto space-y-3">
-                {notifications.map((n) => (
-                  <div
-                    key={n.id}
-                    className={`p-4 rounded-2xl border transition-all ${
-                      n.unread
-                        ? 'bg-blue-50/50 border-blue-100'
-                        : 'bg-slate-50 border-slate-100'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <span className="font-bold text-slate-900 text-sm">{n.title}</span>
-                      <span className="text-[10px] text-slate-400 font-mono shrink-0 bg-white px-2 py-1 rounded-md">{n.time}</span>
-                    </div>
-                    <p className="text-xs text-slate-600 leading-relaxed font-medium">{n.body}</p>
+                {realtimeError && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs flex items-center gap-2">
+                    <WifiOff className="w-4 h-4 shrink-0" />
+                    <span>فشل الاتصال اللحظي للإشعارات — يتم عرض البيانات الحالية</span>
                   </div>
-                ))}
+                )}
+
+                {notifications.length === 0 ? (
+                  <div className="text-center py-12 space-y-3">
+                    <div className="w-12 h-12 bg-slate-100 text-slate-400 rounded-2xl flex items-center justify-center mx-auto">
+                      <Bell className="w-6 h-6" />
+                    </div>
+                    <h4 className="text-sm font-bold text-slate-800">لا توجد إشعارات حتى الآن</h4>
+                    <p className="text-xs text-slate-500">ستظهر هنا إشعارات الرحلات وحالة الطلبات فور حدوثها.</p>
+                  </div>
+                ) : (
+                  notifications.map((n) => (
+                    <div
+                      key={n.id}
+                      onClick={() => handleNotificationClick(n)}
+                      className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                        !n.is_read
+                          ? 'bg-blue-50/70 border-blue-200 shadow-xs'
+                          : 'bg-slate-50 border-slate-100'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-1.5">
+                        <span className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                          {!n.is_read && <span className="w-2 h-2 rounded-full bg-blue-600 inline-block"></span>}
+                          {n.title}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono shrink-0 bg-white px-2 py-0.5 rounded-md">
+                          {formatSafeTime(n.created_at)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed font-medium">{n.message || n.body}</p>
+                    </div>
+                  ))
+                )}
               </div>
             </motion.div>
           </div>

@@ -1,14 +1,38 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { roleService, SystemRole, SystemPermission, UserWithRoles } from '../../auth/services/roleService';
 import { useAuth } from '../../../context/AuthContext';
 import { AppRole, VerificationStatus } from '../../../types/auth';
-import { adminApi, AdminStats, AdminMerchant, AdminProvider, AdminDriver, AdminAuditLog, AdminOrder, AdminServiceRequest } from '../services/adminApi';
+import { adminApi, AdminMerchant, AdminProvider, AdminDriver, AdminOrder, AdminServiceRequest } from '../services/adminApi';
 import { mobilityApi } from '../../customer/services/mobilityApi';
+import { supabase } from '../../../lib/supabase';
+import {
+  LiveDriver,
+  AdminRide,
+  MobilityAdminStats,
+  CashLedgerEntry,
+  CustomerSummary,
+  OperationsAlert,
+  AdminAuditLog,
+} from '../types';
+
+// New Modular Admin Components
+import { AdminHeader } from '../components/AdminHeader';
+import { KpiCards } from '../components/KpiCards';
+import { LiveOperationsRoom } from '../components/LiveOperationsRoom';
+import { LiveDriversTable } from '../components/LiveDriversTable';
+import { LiveRidesTable } from '../components/LiveRidesTable';
+import { CashControlRoom } from '../components/CashControlRoom';
+import { DriverApprovalQueue } from '../components/DriverApprovalQueue';
+import { CustomerMonitorTable } from '../components/CustomerMonitorTable';
+import { OperationsAlerts } from '../components/OperationsAlerts';
+import { AuditLogsView } from '../components/AuditLogsView';
+import { RideDetailsDrawer } from '../components/RideDetailsDrawer';
+import { DriverProfileDrawer } from '../components/DriverProfileDrawer';
+
 import { Avatar } from '../../../components/ui/Avatar';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../../components/ui/Card';
 import {
   Shield,
   ShieldCheck,
@@ -17,38 +41,38 @@ import {
   CheckCircle2,
   AlertCircle,
   Search,
-  UserCheck,
-  UserX,
   Loader2,
   RefreshCw,
   Lock,
-  Layers,
   Store,
   Wrench,
   Car,
   Briefcase,
   TrendingUp,
   ShoppingBag,
-  Bell,
   FileText,
   Sliders,
-  ChevronLeft,
   Settings,
   Activity,
-  X,
-  Eye,
   Banknote,
-  Coins,
-  DollarSign,
-  Wallet,
+  Radio,
+  Clock,
+  ShieldAlert,
+  Navigation,
 } from 'lucide-react';
 
-type AdminTab =
+export type AdminTab =
   | 'dashboard'
-  | 'users'
+  | 'live_ops'
+  | 'drivers'
+  | 'rides'
+  | 'cash_control'
+  | 'driver_approvals'
+  | 'alerts'
+  | 'customers'
   | 'merchants'
   | 'providers'
-  | 'drivers'
+  | 'users'
   | 'orders'
   | 'services'
   | 'roles'
@@ -58,33 +82,59 @@ type AdminTab =
 export const AdminRbacPage: React.FC = () => {
   const { user: currentUser, refreshProfile, isAdmin } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
+  const [activeTab, setActiveTab] = useState<AdminTab>('live_ops');
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Stats State
-  const [stats, setStats] = useState<AdminStats | null>(null);
+  // Realtime & Health Connection State
+  const [realtimeStatus, setRealtimeStatus] = useState<'connected' | 'polling' | 'disconnected'>('connected');
+  const [lastSyncTime, setLastSyncTime] = useState<Date>(new Date());
 
-  // Data Lists
+  // Mobility & Admin Live State
+  const [mobilityStats, setMobilityStats] = useState<MobilityAdminStats>({
+    onlineDrivers: 0,
+    approvedDrivers: 0,
+    pendingDrivers: 0,
+    activeRides: 0,
+    searchingRides: 0,
+    completedToday: 0,
+    cancelledToday: 0,
+    cashCollectedToday: 0,
+    platformCommissionToday: 0,
+    driverNetToday: 0,
+    pendingCashToday: 0,
+    totalRidesToday: 0,
+  });
+
+  const [liveDrivers, setLiveDrivers] = useState<LiveDriver[]>([]);
+  const [liveRides, setLiveRides] = useState<AdminRide[]>([]);
+  const [cashLedger, setCashLedger] = useState<CashLedgerEntry[]>([]);
+  const [operationsAlerts, setOperationsAlerts] = useState<OperationsAlert[]>([]);
+  const [customersSummary, setCustomersSummary] = useState<CustomerSummary[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
+
+  // Other Entities State (Marketplace & RBAC)
   const [users, setUsers] = useState<UserWithRoles[]>([]);
   const [merchants, setMerchants] = useState<AdminMerchant[]>([]);
   const [providers, setProviders] = useState<AdminProvider[]>([]);
-  const [drivers, setDrivers] = useState<AdminDriver[]>([]);
-  const [adminRides, setAdminRides] = useState<any[]>([]);
-  const [cashAnalytics, setCashAnalytics] = useState<any>(null);
-  const [cashPeriod, setCashPeriod] = useState<'all' | 'today' | 'yesterday' | 'this_week' | 'this_month'>('all');
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [serviceRequests, setServiceRequests] = useState<AdminServiceRequest[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
-
-  // RBAC Setup lists
   const [roles, setRoles] = useState<SystemRole[]>([]);
   const [permissions, setPermissions] = useState<SystemPermission[]>([]);
   const [rolePermMap, setRolePermMap] = useState<Record<string, Set<string>>>({});
 
-  // Confirmation Modal State
+  // Active Modals & Drawers
+  const [selectedRide, setSelectedRide] = useState<AdminRide | null>(null);
+  const [selectedDriver, setSelectedDriver] = useState<LiveDriver | null>(null);
+  const [isRideDrawerOpen, setIsRideDrawerOpen] = useState(false);
+  const [isDriverDrawerOpen, setIsDriverDrawerOpen] = useState(false);
+
+  // Cash Confirmation Modal
+  const [cashConfirmRide, setCashConfirmRide] = useState<AdminRide | null>(null);
+
+  // General Confirmation Modal
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -92,19 +142,42 @@ export const AdminRbacPage: React.FC = () => {
     action: () => Promise<void>;
   } | null>(null);
 
-  // Detailed view of log entry
-  const [selectedLog, setSelectedLog] = useState<AdminAuditLog | null>(null);
+  const channelRef = useRef<any>(null);
 
-  const loadData = useCallback(async () => {
-    setIsLoading(true);
-    setStatusMessage(null);
+  // Toast Helper
+  const showToast = (type: 'success' | 'error', text: string) => {
+    setStatusMessage({ type, text });
+    setTimeout(() => {
+      setStatusMessage((prev) => (prev?.text === text ? null : prev));
+    }, 5000);
+  };
+
+  // Main Live Data Loader
+  const loadData = useCallback(async (isSilent = false) => {
+    if (!isSilent) setIsLoading(true);
+    else setIsRefreshing(true);
+
     try {
-      // 1. Load active tab data to be fully optimized
-      const statsData = await adminApi.getAdminStats();
-      setStats(statsData);
+      // 1. Always load real live mobility stats, drivers, rides, alerts & ledger
+      const [statsRes, driversRes, ridesRes, alertsRes, ledgerRes] = await Promise.all([
+        adminApi.getAdminStats(),
+        adminApi.getLiveDrivers(),
+        adminApi.getLiveRides(100),
+        adminApi.getOperationsAlerts(),
+        adminApi.getCashLedger('all'),
+      ]);
 
-      if (activeTab === 'dashboard') {
-        // Just loaded stats
+      setMobilityStats(statsRes);
+      setLiveDrivers(driversRes);
+      setLiveRides(ridesRes);
+      setOperationsAlerts(alertsRes);
+      setCashLedger(ledgerRes);
+      setLastSyncTime(new Date());
+
+      // 2. Load tab-specific auxiliary data
+      if (activeTab === 'customers') {
+        const custRes = await adminApi.getCustomersSummary();
+        setCustomersSummary(custRes);
       } else if (activeTab === 'users') {
         const allUsers = await roleService.getAllUsersWithRoles();
         setUsers(allUsers);
@@ -114,15 +187,6 @@ export const AdminRbacPage: React.FC = () => {
       } else if (activeTab === 'providers') {
         const allProviders = await adminApi.getProviders();
         setProviders(allProviders);
-      } else if (activeTab === 'drivers') {
-        const [allDrivers, allRides, cashStats] = await Promise.all([
-          adminApi.getDrivers(),
-          mobilityApi.getAllRidesForAdmin(),
-          mobilityApi.getCashOperationsAnalytics(cashPeriod)
-        ]);
-        setDrivers(allDrivers);
-        setAdminRides(allRides);
-        setCashAnalytics(cashStats);
       } else if (activeTab === 'orders') {
         const allOrders = await adminApi.getOrders();
         setOrders(allOrders);
@@ -136,7 +200,6 @@ export const AdminRbacPage: React.FC = () => {
         ]);
         setRoles(allRoles);
         setPermissions(allPerms);
-
         const matrixMap: Record<string, Set<string>> = {};
         for (const r of allRoles) {
           const permIds = await roleService.getRolePermissionIds(r.id);
@@ -148,15 +211,73 @@ export const AdminRbacPage: React.FC = () => {
         setAuditLogs(allLogs);
       }
     } catch (err: any) {
-      console.error(err);
-      setStatusMessage({ type: 'error', text: err.message || 'حدث خطأ أثناء تحميل البيانات من قاعدة البيانات.' });
+      console.error('[ADMIN LOAD DATA ERROR]', err);
+      if (!isSilent) {
+        showToast('error', err.message || 'حدث خطأ أثناء تحميل بيانات لوحة التحكم.');
+      }
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   }, [activeTab]);
 
   useEffect(() => {
     loadData();
+  }, [loadData]);
+
+  // Realtime Subscriptions with Fallback Polling
+  useEffect(() => {
+    let pollInterval: any = null;
+
+    try {
+      const channel = supabase
+        .channel('admin_live_ops_realtime')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'rides' },
+          () => {
+            loadData(true);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'drivers' },
+          () => {
+            loadData(true);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'ride_location_updates' },
+          () => {
+            loadData(true);
+          }
+        )
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            setRealtimeStatus('connected');
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            setRealtimeStatus('polling');
+          }
+        });
+
+      channelRef.current = channel;
+    } catch (e) {
+      console.warn('Realtime subscription fallback to polling:', e);
+      setRealtimeStatus('polling');
+    }
+
+    // Safety polling every 20 seconds
+    pollInterval = setInterval(() => {
+      loadData(true);
+    }, 20000);
+
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+      }
+      if (pollInterval) clearInterval(pollInterval);
+    };
   }, [loadData]);
 
   // Route Guard Check
@@ -168,45 +289,48 @@ export const AdminRbacPage: React.FC = () => {
         </div>
         <h3 className="text-2xl font-bold text-slate-900 mb-2">غير مصرح بالوصول</h3>
         <p className="text-slate-600 max-w-md leading-relaxed mb-6">
-          عذراً، حسابك الحالي لا يملك صلاحيات الإدارة الكافية لاستعراض لوحة تحكم المدير العام.
+          عذراً، حسابك الحالي لا يملك صلاحيات الإدارة الكافية لاستعراض غرفة العمليات ولوحة تحكم المدير العام.
         </p>
         <span className="inline-flex items-center px-4 py-1.5 bg-rose-100 text-rose-800 text-sm font-bold rounded-full border border-rose-200">
-          يتطلب دور: admin
+          يتطلب دور: admin (is_admin = true)
         </span>
       </div>
     );
   }
 
-  // Toast auto-clear
-  const showToast = (type: 'success' | 'error', text: string) => {
-    setStatusMessage({ type, text });
-    setTimeout(() => {
-      setStatusMessage((prev) => (prev?.text === text ? null : prev));
-    }, 5000);
-  };
-
-  // Safe action trigger
-  const triggerConfirmation = (title: string, desc: string, action: () => Promise<void>) => {
-    setConfirmModal({
-      isOpen: true,
-      title,
-      desc,
-      action: async () => {
-        try {
-          setIsLoading(true);
-          await action();
-          setConfirmModal(null);
-          await loadData();
-        } catch (err: any) {
-          showToast('error', err.message || 'حدث خطأ أثناء تنفيذ العملية.');
-        } finally {
-          setIsLoading(false);
-        }
-      },
-    });
-  };
-
   // --- ACTIONS ---
+
+  // Handle Driver Status Update (Approved / Suspended / Rejected)
+  const handleUpdateDriverStatus = async (driverId: string, status: VerificationStatus) => {
+    try {
+      await adminApi.updateDriverStatus(driverId, status);
+      showToast('success', 'تم تحديث حالة الكابتن واعتمادها في قاعدة البيانات بنجاح.');
+      await loadData(true);
+      if (selectedDriver && selectedDriver.id === driverId) {
+        setSelectedDriver({ ...selectedDriver, approval_status: status });
+      }
+    } catch (err: any) {
+      console.error('[ADMIN DRIVER STATUS]', err);
+      showToast('error', err.message || 'فشل تحديث حالة الكابتن.');
+    }
+  };
+
+  // Handle Cash Payment Confirmation (15% Split / 85% Driver)
+  const handleConfirmCashCollection = async (ride: AdminRide) => {
+    const fare = ride.customer_total || ride.final_fare || ride.estimated_fare || 0;
+    try {
+      await adminApi.markCashPaymentReceived(ride.id);
+      showToast('success', `تم تأكيد استلام ${fare} ج.م نقداً وتحديث دفتر الحسابات بنجاح.`);
+      setCashConfirmRide(null);
+      if (selectedRide && selectedRide.id === ride.id) {
+        setSelectedRide({ ...selectedRide, payment_status: 'paid_cash' });
+      }
+      await loadData(true);
+    } catch (err: any) {
+      console.error('[MARK CASH COLLECTED]', err);
+      showToast('error', err.message || 'فشل تسجيل استلام المبلغ نقداً.');
+    }
+  };
 
   // User Actions
   const handleToggleUserActive = async (userId: string, currentActive: boolean) => {
@@ -214,211 +338,118 @@ export const AdminRbacPage: React.FC = () => {
       showToast('error', 'لا يمكنك تعطيل حسابك الشخصي الذي تستخدمه الآن!');
       return;
     }
-    triggerConfirmation(
-      currentActive ? 'تعطيل حساب مستخدم' : 'تنشيط حساب مستخدم',
-      `هل أنت متأكد من رغبتك في ${currentActive ? 'تعطيل' : 'تنشيط'} هذا الحساب؟ لن يتمكن المستخدم من تسجيل الدخول إذا تم تعطيله.`,
-      async () => {
-        await roleService.toggleUserActiveStatus(userId, !currentActive);
-        showToast('success', 'تم تحديث حالة الحساب بنجاح.');
-        loadData();
-      }
-    );
+    try {
+      await roleService.toggleUserActiveStatus(userId, !currentActive);
+      showToast('success', 'تم تحديث حالة الحساب بنجاح.');
+      loadData();
+    } catch (err: any) {
+      showToast('error', err.message || 'فشل تعديل حالة الحساب.');
+    }
   };
 
   const handleToggleUserRole = async (userId: string, roleName: AppRole, hasRole: boolean) => {
-    // Safety check: Prevent removing the last admin on the frontend side
     if (roleName === 'admin' && hasRole) {
       const adminUsers = users.filter((u) => u.roles.some((r) => r.name === 'admin'));
       if (adminUsers.length <= 1) {
-        showToast('error', 'لا يمكن سحب دور المشرف من هذا الحساب؛ يجب أن يتبقى مشرف واحد على الأقل في النظام.');
+        showToast('error', 'لا يمكن سحب دور المشرف؛ يجب أن يتبقى مشرف واحد على الأقل.');
         return;
       }
     }
-
-    triggerConfirmation(
-      hasRole ? 'سحب دور' : 'منح دور جديد',
-      `هل أنت متأكد من رغبتك في ${hasRole ? 'سحب دور' : 'منح دور'} (${roleName}) لهذا المستخدم؟`,
-      async () => {
-        await roleService.toggleUserRole(userId, roleName, hasRole);
-        showToast('success', 'تم تحديث أدوار المستخدم بنجاح.');
-        loadData();
-        if (userId === currentUser?.id) {
-          await refreshProfile();
-        }
-      }
-    );
-  };
-
-  // Merchant Actions
-  const handleUpdateMerchant = async (merchantId: string, name: string, status: VerificationStatus) => {
-    const statusLabels: Record<VerificationStatus, string> = {
-      pending: 'قيد الانتظار',
-      approved: 'اعتماد وتنشيط',
-      rejected: 'رفض طلب',
-      suspended: 'تعليق حساب التاجر',
-    };
-    triggerConfirmation(
-      `تغيير حالة التاجر (${name})`,
-      `هل تريد تأكيد تغيير حالة المتجر إلى "${statusLabels[status]}"؟ سيتم تسجيل هذا الإجراء تلقائياً في سجلات الأمان.`,
-      async () => {
-        await adminApi.updateMerchantStatus(merchantId, status);
-        showToast('success', 'تم تحديث حالة التاجر وتسجيل العملية.');
-        loadData();
-      }
-    );
-  };
-
-  // Service Provider Actions
-  const handleUpdateProvider = async (providerId: string, name: string, status: VerificationStatus) => {
-    const statusLabels: Record<VerificationStatus, string> = {
-      pending: 'قيد المراجعة',
-      approved: 'اعتماد مقدم الخدمة',
-      rejected: 'رفض طلب المقدم',
-      suspended: 'تعليق حساب مقدم الخدمة',
-    };
-    triggerConfirmation(
-      `تعديل حالة مقدم الخدمة (${name})`,
-      `هل تريد تأكيد تغيير حالة مقدم الخدمة إلى "${statusLabels[status]}"؟`,
-      async () => {
-        await adminApi.updateProviderStatus(providerId, status);
-        showToast('success', 'تم تحديث حالة مقدم الخدمة بنجاح.');
-        loadData();
-      }
-    );
-  };
-
-  // Driver Actions
-  const handleUpdateDriver = async (driverId: string, name: string, status: VerificationStatus) => {
-    const statusLabels: Record<VerificationStatus, string> = {
-      pending: 'قيد الانتظار',
-      approved: 'اعتماد السائق وتنشيطه',
-      rejected: 'رفض طلب الانضمام',
-      suspended: 'تعليق رخصة السائق',
-    };
-    triggerConfirmation(
-      `تغيير حالة السائق (${name})`,
-      `هل تريد تأكيد تغيير حالة السائق إلى "${statusLabels[status]}"؟ ستتأثر قدرة السائق على استقبال الرحلات.`,
-      async () => {
-        try {
-          await adminApi.updateDriverStatus(driverId, status);
-          await loadData();
-          showToast('success', 'تم اعتماد الكابتن وتحديث قاعدة البيانات بنجاح');
-        } catch (error) {
-          console.error('[ADMIN DRIVER APPROVAL]', error);
-          showToast('error', error instanceof Error ? error.message : 'فشل اعتماد الكابتن');
-        }
-      }
-    );
-  };
-
-  // Cash Collection Action
-  const handleMarkCashCollected = async (rideId: string, amount: number) => {
-    triggerConfirmation(
-      'تأكيد تحصيل المبلغ نقداً',
-      `هل تريد تأكيد استلام مبلغ ${amount} ج.م نقداً لهذه الرحلة وتحديث سجل العمليات وحساب عمولة المنصة (15%)؟`,
-      async () => {
-        try {
-          await mobilityApi.markCashPaymentReceived(rideId);
-          await loadData();
-          showToast('success', 'تم تسجيل استلام المبلغ نقداً وتحديث الرصيد وسجل العمليات بنجاح.');
-        } catch (error: any) {
-          console.error('[MARK CASH COLLECTED]', error);
-          showToast('error', error.message || 'فشل تسجيل استلام المبلغ نقداً.');
-        }
-      }
-    );
-  };
-
-  const handleChangeCashPeriod = async (period: 'all' | 'today' | 'yesterday' | 'this_week' | 'this_month') => {
-    setCashPeriod(period);
-    const data = await mobilityApi.getCashOperationsAnalytics(period);
-    setCashAnalytics(data);
-  };
-
-  // Role Permissions mapping toggler
-  const handleToggleRolePermission = async (roleId: string, permId: string, isAssigned: boolean) => {
-    // Safeguard: Do not strip permissions from admin if it disables basic access
-    const roleObj = roles.find((r) => r.id === roleId);
-    if (roleObj?.name === 'admin' && isAssigned) {
-      const permObj = permissions.find((p) => p.id === permId);
-      if (permObj?.code === 'admin:all') {
-        showToast('error', 'ممنوع سحب الصلاحية المطلقة (admin:all) من دور المدير العام لتجنب قفل الحسابات!');
-        return;
-      }
+    try {
+      await roleService.toggleUserRole(userId, roleName, hasRole);
+      showToast('success', 'تم تحديث أدوار المستخدم بنجاح.');
+      loadData();
+      if (userId === currentUser?.id) await refreshProfile();
+    } catch (err: any) {
+      showToast('error', err.message || 'فشل تحديث الدور.');
     }
-
-    triggerConfirmation(
-      isAssigned ? 'إلغاء ربط صلاحية' : 'ربط صلاحية جديدة بالدور',
-      `هل تريد تعديل مصفوفة الصلاحيات لهذا الدور؟`,
-      async () => {
-        await roleService.toggleRolePermission(roleId, permId, isAssigned);
-        showToast('success', 'تم تحديث مصفوفة الصلاحيات للدور بنجاح.');
-        loadData();
-      }
-    );
   };
 
-  // Status Badge helper
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'approved':
-      case 'completed':
-      case 'delivered':
-        return <Badge variant="success">نشط / معتمد</Badge>;
-      case 'pending':
-        return <Badge variant="warning">قيد المراجعة</Badge>;
-      case 'rejected':
-      case 'cancelled':
-        return <Badge variant="error">مرفوض / ملغى</Badge>;
-      case 'suspended':
-        return <Badge variant="neutral">موقوف مؤقتاً</Badge>;
-      default:
-        return <Badge variant="info">{status}</Badge>;
+  // Select Driver Entity to Open Drawer
+  const handleSelectDriver = (driver: LiveDriver) => {
+    setSelectedDriver(driver);
+    setIsDriverDrawerOpen(true);
+  };
+
+  const handleSelectDriverById = (driverId: string) => {
+    const found = liveDrivers.find((d) => d.id === driverId);
+    if (found) {
+      setSelectedDriver(found);
+      setIsDriverDrawerOpen(true);
+    } else {
+      showToast('error', 'تعذر العثور على بيانات هذا الكابتن.');
+    }
+  };
+
+  // Select Ride Entity to Open Drawer
+  const handleSelectRide = (ride: AdminRide) => {
+    setSelectedRide(ride);
+    setIsRideDrawerOpen(true);
+  };
+
+  const handleSelectRideById = (rideId: string) => {
+    const found = liveRides.find((r) => r.id === rideId);
+    if (found) {
+      setSelectedRide(found);
+      setIsRideDrawerOpen(true);
+    } else {
+      showToast('error', 'تعذر العثور على تفاصيل هذه الرحلة.');
+    }
+  };
+
+  // Entity Selector from Alert Center
+  const handleSelectEntityFromAlert = (type: 'ride' | 'driver', id: string) => {
+    if (type === 'ride') {
+      handleSelectRideById(id);
+    } else if (type === 'driver') {
+      handleSelectDriverById(id);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/50 flex flex-col lg:flex-row dir-rtl font-sans pb-12">
-      {/* Sidebar navigation */}
-      <aside className="w-full lg:w-72 bg-white border-l border-slate-200 shrink-0 flex flex-col">
+    <div className="min-h-screen bg-slate-100/70 flex flex-col lg:flex-row dir-rtl font-sans pb-12">
+      {/* Sidebar Navigation */}
+      <aside className="w-full lg:w-72 bg-white border-l border-slate-200 shrink-0 flex flex-col shadow-xs">
         {/* Brand */}
-        <div className="p-6 border-b border-slate-100 flex items-center gap-3">
-          <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white border border-emerald-500 shadow-sm">
+        <div className="p-5 border-b border-slate-100 flex items-center gap-3">
+          <div className="w-10 h-10 bg-emerald-600 rounded-2xl flex items-center justify-center text-white border border-emerald-500 shadow-md">
             <Shield className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-slate-950">لوحة تحكم الإدارة</h2>
-            <p className="text-[11px] text-slate-500 font-medium">نظام حماية كفراوي الموحد</p>
+            <h2 className="text-base font-black text-slate-900">Kafrawy Go Admin</h2>
+            <p className="text-[11px] text-slate-500 font-medium">لوحة الإدارة وغرفة العمليات</p>
           </div>
         </div>
 
-        {/* Manager Card */}
-        <div className="p-4 mx-4 my-4 bg-slate-50 rounded-2xl border border-slate-150 flex items-center gap-3">
+        {/* Manager Badge Card */}
+        <div className="p-3.5 mx-3.5 my-3 bg-slate-50 rounded-2xl border border-slate-200 flex items-center gap-3">
           <Avatar name={currentUser?.full_name || 'مدير'} src={currentUser?.avatar_url || ''} size="md" />
           <div className="overflow-hidden">
             <h4 className="text-xs font-bold text-slate-900 truncate">{currentUser?.full_name}</h4>
-            <span className="text-[10px] inline-flex items-center gap-1 font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100 mt-1">
+            <span className="text-[10px] inline-flex items-center gap-1 font-bold text-emerald-700 bg-emerald-100/60 px-2 py-0.5 rounded-full border border-emerald-200 mt-1">
               <ShieldCheck className="w-3 h-3" />
-              <span>مدير عام النظام</span>
+              <span>مشرف عام معتمد</span>
             </span>
           </div>
         </div>
 
-        {/* Menu Links */}
-        <nav className="flex-1 px-4 py-2 space-y-1">
+        {/* Navigation Categories */}
+        <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto max-h-[calc(100vh-200px)]">
+          {/* Section: Live Mobility Operations */}
+          <div className="px-3 pt-2 pb-1 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+            منظومة النقل والعمليات الحية
+          </div>
+
           {[
-            { id: 'dashboard', label: 'الرئيسية والإحصائيات', icon: TrendingUp },
-            { id: 'users', label: 'المستخدمون والأدوار', icon: Users },
-            { id: 'merchants', label: 'إدارة التجار', icon: Store },
-            { id: 'providers', label: 'مقدمو الخدمات', icon: Wrench },
-            { id: 'drivers', label: 'السائقين والمركبات', icon: Car },
-            { id: 'orders', label: 'طلبات المتجر', icon: ShoppingBag },
-            { id: 'services', label: 'طلبات الصيانة والخدمات', icon: Sliders },
-            { id: 'roles', label: 'الصلاحيات والمصفوفة', icon: Key },
-            { id: 'audit', label: 'سجل العمليات Audit Logs', icon: FileText },
-            { id: 'settings', label: 'الإعدادات العامة', icon: Settings },
+            { id: 'live_ops', label: 'غرفة العمليات والخريطة', icon: Radio, count: mobilityStats.activeRides },
+            { id: 'drivers', label: 'مراقبة الكباتن الحية', icon: Car, count: mobilityStats.onlineDrivers },
+            { id: 'rides', label: 'سجل الرحلات المباشرة', icon: Activity, count: null },
+            { id: 'cash_control', label: 'الرقابة المالية والتحصيل', icon: Banknote, count: null },
+            { id: 'driver_approvals', label: 'تدقيق واعتماد الكباتن', icon: ShieldCheck, count: liveDrivers.filter((d) => d.approval_status === 'pending').length },
+            { id: 'alerts', label: 'مركز التنبيهات والأعطال', icon: ShieldAlert, count: operationsAlerts.length, isDanger: operationsAlerts.length > 0 },
+            { id: 'customers', label: 'سجل الركاب والعملاء', icon: Users, count: null },
           ].map((item) => {
-            const IconComponent = item.icon;
+            const IconComp = item.icon;
             const isActive = activeTab === item.id;
             return (
               <button
@@ -427,13 +458,64 @@ export const AdminRbacPage: React.FC = () => {
                   setActiveTab(item.id as AdminTab);
                   setSearchQuery('');
                 }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                   isActive
-                    ? 'bg-emerald-600 text-white shadow-xs'
+                    ? 'bg-slate-900 text-white shadow-sm'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
               >
-                <IconComponent className="w-4 h-4 shrink-0" />
+                <div className="flex items-center gap-2.5">
+                  <IconComp className={`w-4 h-4 shrink-0 ${isActive ? 'text-emerald-400' : 'text-slate-500'}`} />
+                  <span>{item.label}</span>
+                </div>
+                {item.count !== null && item.count !== undefined && item.count > 0 && (
+                  <span
+                    className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+                      item.isDanger
+                        ? 'bg-rose-500 text-white animate-pulse'
+                        : isActive
+                        ? 'bg-emerald-500 text-white'
+                        : 'bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    {item.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+
+          {/* Section: Platform Management */}
+          <div className="px-3 pt-4 pb-1 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+            إدارة المنصة والسوق
+          </div>
+
+          {[
+            { id: 'dashboard', label: 'الإحصائيات ونظرة عامة', icon: TrendingUp },
+            { id: 'merchants', label: 'المتاجر والتجار', icon: Store },
+            { id: 'providers', label: 'مقدمو الخدمات والصيانة', icon: Wrench },
+            { id: 'orders', label: 'طلبات المتجر', icon: ShoppingBag },
+            { id: 'services', label: 'طلبات الخدمات', icon: Sliders },
+            { id: 'users', label: 'المستخدمون والأدوار', icon: Users },
+            { id: 'roles', label: 'مصفوفة الصلاحيات (RBAC)', icon: Key },
+            { id: 'audit', label: 'سجل العمليات Audit Logs', icon: FileText },
+          ].map((item) => {
+            const IconComp = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActiveTab(item.id as AdminTab);
+                  setSearchQuery('');
+                }}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  isActive
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <IconComp className={`w-4 h-4 shrink-0 ${isActive ? 'text-emerald-400' : 'text-slate-500'}`} />
                 <span>{item.label}</span>
               </button>
             );
@@ -441,965 +523,191 @@ export const AdminRbacPage: React.FC = () => {
         </nav>
       </aside>
 
-      {/* Main Section */}
-      <main className="flex-1 p-6 lg:p-8 space-y-6 overflow-hidden">
-        {/* Top Header */}
-        <header className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200">
-          <div className="relative w-full md:w-80">
-            <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="بحث في لوحة التحكم..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-4 pr-10 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-medium"
-            />
-          </div>
+      {/* Main Content Area */}
+      <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6 overflow-x-hidden">
+        {/* Admin Header with Connection & Alerts Indicators */}
+        <AdminHeader
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          alertCount={operationsAlerts.length}
+          realtimeStatus={realtimeStatus}
+          onRefresh={() => loadData(false)}
+          isRefreshing={isRefreshing}
+          lastSyncTime={lastSyncTime}
+        />
 
-          <div className="flex items-center gap-3 self-stretch md:self-auto justify-between md:justify-end">
-            <button
-              onClick={loadData}
-              disabled={isLoading}
-              className="p-2 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200 transition-all cursor-pointer text-slate-600 flex items-center justify-center"
-              title="تحديث البيانات"
-            >
-              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-            </button>
-
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse" />
-              <span className="text-xs font-bold text-slate-600">اتصال آمن مفعّل RLS</span>
-            </div>
-          </div>
-        </header>
-
-        {/* Global Toast Message */}
+        {/* Global Toast Banner */}
         {statusMessage && (
           <div
-            className={`p-4 rounded-xl border flex items-center gap-3 animate-slide-in ${
+            className={`p-4 rounded-2xl border flex items-center gap-3 animate-slide-in shadow-xs ${
               statusMessage.type === 'success'
-                ? 'bg-emerald-50 border-emerald-100 text-emerald-800'
-                : 'bg-rose-50 border-rose-100 text-rose-800'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                : 'bg-rose-50 border-rose-200 text-rose-900'
             }`}
           >
             {statusMessage.type === 'success' ? (
-              <CheckCircle2 className="w-5 h-5 shrink-0" />
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
             ) : (
-              <AlertCircle className="w-5 h-5 shrink-0" />
+              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
             )}
-            <p className="text-xs font-bold leading-normal">{statusMessage.text}</p>
+            <p className="text-xs font-bold">{statusMessage.text}</p>
           </div>
         )}
 
-        {/* LOADING SKELETON */}
-        {isLoading && !confirmModal?.isOpen && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 space-y-3 animate-pulse">
-                  <div className="w-8 h-8 bg-slate-100 rounded-lg" />
-                  <div className="h-3.5 bg-slate-100 rounded-md w-2/3" />
-                  <div className="h-6 bg-slate-100 rounded-md w-1/3" />
-                </div>
-              ))}
-            </div>
-            <div className="bg-white rounded-2xl border border-slate-200 h-64 animate-pulse" />
+        {/* Top KPI Cards (Show on Live Ops and Dashboard) */}
+        {(activeTab === 'live_ops' || activeTab === 'dashboard') && (
+          <KpiCards mobility={mobilityStats} onCardClick={setActiveTab} />
+        )}
+
+        {/* Loading Spinner Skeleton */}
+        {isLoading && !isRefreshing && (
+          <div className="py-20 flex flex-col items-center justify-center space-y-3">
+            <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
+            <p className="text-xs text-slate-500 font-bold">جارِ مزامنة بيانات غرفة العمليات...</p>
           </div>
         )}
 
-        {/* VIEW: DASHBOARD */}
-        {!isLoading && activeTab === 'dashboard' && stats && (
-          <div className="space-y-6">
-            {/* Header title */}
-            <div>
-              <h1 className="text-xl font-bold text-slate-900">مرحباً بك، {currentUser?.full_name}</h1>
-              <p className="text-xs text-slate-500 mt-1">نظرة عامة على نشاط المنصة الكلي وإحصائيات النظام المسجلة</p>
-            </div>
-
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {[
-                { label: 'إجمالي المستخدمين', value: stats.totalUsers, icon: Users, color: 'bg-blue-50 text-blue-700 border-blue-100' },
-                { label: 'إجمالي التجار', value: stats.totalMerchants, icon: Store, color: 'bg-amber-50 text-amber-700 border-amber-100' },
-                { label: 'إجمالي مقدمي الخدمات', value: stats.totalProviders, icon: Wrench, color: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
-                { label: 'إجمالي السائقين الكباتن', value: stats.totalDrivers, icon: Car, color: 'bg-purple-50 text-purple-700 border-purple-100' },
-                { label: 'إجمالي أصحاب العمل', value: stats.totalEmployers, icon: Briefcase, color: 'bg-indigo-50 text-indigo-700 border-indigo-100' },
-                { label: 'إجمالي المنتجات', value: stats.totalProducts, icon: ShoppingBag, color: 'bg-pink-50 text-pink-700 border-pink-100' },
-                { label: 'إجمالي طلبات المتجر', value: stats.totalOrders, icon: CheckCircle2, color: 'bg-sky-50 text-sky-700 border-sky-100' },
-                { label: 'إجمالي طلبات الخدمات وصيانة', value: stats.totalServiceRequests, icon: Sliders, color: 'bg-rose-50 text-rose-700 border-rose-100' },
-              ].map((stat, idx) => {
-                const IconComponent = stat.icon;
-                return (
-                  <div key={idx} className="bg-white p-5 rounded-2xl border border-slate-200 flex items-center justify-between gap-4 shadow-2xs">
-                    <div className="space-y-1.5">
-                      <span className="text-[11px] font-bold text-slate-500 block">{stat.label}</span>
-                      <span className="text-2xl font-black text-slate-950 block">{stat.value}</span>
-                    </div>
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center border shrink-0 ${stat.color}`}>
-                      <IconComponent className="w-6 h-6" />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Quick Warning block */}
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 flex flex-col md:flex-row items-center gap-4 justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-amber-50 text-amber-600 border border-amber-100 rounded-xl flex items-center justify-center shrink-0">
-                  <ShieldCheck className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-slate-900">ضوابط الأمن والحماية والـ RLS مفعلة بالكامل</h3>
-                  <p className="text-[10px] text-slate-500 mt-0.5">
-                    التحقق من صحة UUID يتم تلقائياً في قاعدة البيانات. يرجى مراجعة سجل العمليات (Audit Logs) بشكل مستمر لمراقبة جميع الأنشطة الحساسة.
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setActiveTab('audit')}
-                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-[11px] cursor-pointer transition-all shrink-0"
-              >
-                استعراض سجل الأمان
-              </button>
-            </div>
-          </div>
+        {/* TAB 1: LIVE OPERATIONS ROOM (MAP + DISPATCH FEED) */}
+        {!isLoading && activeTab === 'live_ops' && (
+          <LiveOperationsRoom
+            drivers={liveDrivers}
+            rides={liveRides}
+            alerts={operationsAlerts}
+            onSelectDriver={handleSelectDriver}
+            onSelectRide={handleSelectRide}
+            onNavigateTab={setActiveTab}
+          />
         )}
 
-        {/* VIEW: USERS */}
+        {/* TAB 2: LIVE DRIVERS MONITOR */}
+        {!isLoading && activeTab === 'drivers' && (
+          <LiveDriversTable
+            drivers={liveDrivers}
+            onSelectDriver={handleSelectDriver}
+            onOpenApprovalQueue={() => setActiveTab('driver_approvals')}
+          />
+        )}
+
+        {/* TAB 3: LIVE RIDES TABLE */}
+        {!isLoading && activeTab === 'rides' && (
+          <LiveRidesTable
+            rides={liveRides}
+            onSelectRide={handleSelectRide}
+            onConfirmCashPayment={(ride) => setCashConfirmRide(ride)}
+          />
+        )}
+
+        {/* TAB 4: CASH CONTROL ROOM */}
+        {!isLoading && activeTab === 'cash_control' && (
+          <CashControlRoom
+            mobilityStats={mobilityStats}
+            cashLedger={cashLedger}
+            onSelectDriverById={handleSelectDriverById}
+            onRefresh={() => loadData(false)}
+          />
+        )}
+
+        {/* TAB 5: DRIVER APPROVAL QUEUE */}
+        {!isLoading && activeTab === 'driver_approvals' && (
+          <DriverApprovalQueue
+            drivers={liveDrivers}
+            onUpdateDriverStatus={handleUpdateDriverStatus}
+            onSelectDriver={handleSelectDriver}
+            isLoading={isLoading}
+          />
+        )}
+
+        {/* TAB 6: OPERATIONS ALERTS CENTER */}
+        {!isLoading && activeTab === 'alerts' && (
+          <OperationsAlerts
+            alerts={operationsAlerts}
+            onSelectEntity={handleSelectEntityFromAlert}
+            onRefresh={() => loadData(false)}
+          />
+        )}
+
+        {/* TAB 7: CUSTOMERS MONITOR */}
+        {!isLoading && activeTab === 'customers' && (
+          <CustomerMonitorTable customers={customersSummary} />
+        )}
+
+        {/* TAB 8: AUDIT LOGS VIEW */}
+        {!isLoading && activeTab === 'audit' && (
+          <AuditLogsView logs={auditLogs} />
+        )}
+
+        {/* TAB 9: USERS & RBAC */}
         {!isLoading && activeTab === 'users' && (
           <div className="space-y-6">
-            <div>
-              <h1 className="text-xl font-bold text-slate-900">إدارة حسابات المستخدمين والمهام</h1>
-              <p className="text-xs text-slate-500 mt-1">تنشيط أو تعطيل الحسابات، وإدارة المهام والأدوار (Roles) الممنوحة مباشرة</p>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
-              <div className="overflow-x-auto">
-                <table className="w-full text-right border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50/50 border-b border-slate-200">
-                      <th className="p-4 text-xs font-black text-slate-700">المستخدم</th>
-                      <th className="p-4 text-xs font-black text-slate-700">رقم الهاتف</th>
-                      <th className="p-4 text-xs font-black text-slate-700">تاريخ التسجيل</th>
-                      <th className="p-4 text-xs font-black text-slate-700">الحالة</th>
-                      <th className="p-4 text-xs font-black text-slate-700">الأدوار الحالية</th>
-                      <th className="p-4 text-xs font-black text-slate-700 text-left">التحكم</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {users
-                      .filter((u) => u.full_name.includes(searchQuery) || (u.phone_number || '').includes(searchQuery))
-                      .map((u) => (
-                        <tr key={u.id} className="hover:bg-slate-50/30 transition-colors">
-                          <td className="p-4">
-                            <div className="flex items-center gap-3">
-                              <Avatar name={u.full_name} src={u.avatar_url || ''} size="sm" />
-                              <div>
-                                <span className="text-xs font-bold text-slate-900 block">{u.full_name}</span>
-                                <span className="text-[10px] text-slate-400 block font-mono">{u.id}</span>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="p-4 text-xs font-medium text-slate-600">{u.phone_number || 'غير متوفر'}</td>
-                          <td className="p-4 text-xs font-medium text-slate-500">
-                            {new Date(u.created_at).toLocaleDateString('ar-EG', { dateStyle: 'medium' })}
-                          </td>
-                          <td className="p-4">
-                            {u.is_active ? (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
-                                نشط
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-100">
-                                معطل
-                              </span>
-                            )}
-                          </td>
-                          <td className="p-4">
-                            <div className="flex flex-wrap gap-1">
-                              {u.roles.map((r) => (
-                                <span key={r.id} className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-700">
-                                  {r.name}
-                                </span>
-                              ))}
-                            </div>
-                          </td>
-                          <td className="p-4 text-left">
-                            <div className="inline-flex items-center gap-2">
-                              {/* Toggle active status */}
-                              <Button
-                                size="sm"
-                                variant={u.is_active ? 'secondary' : 'primary'}
-                                onClick={() => handleToggleUserActive(u.id, u.is_active)}
-                                className="text-[10px] py-1 h-auto cursor-pointer"
-                              >
-                                {u.is_active ? 'تعطيل الحساب' : 'تنشيط الحساب'}
-                              </Button>
-
-                              {/* Toggle admin role */}
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() =>
-                                  handleToggleUserRole(
-                                    u.id,
-                                    'admin',
-                                    u.roles.some((r) => r.name === 'admin')
-                                  )
-                                }
-                                className="text-[10px] py-1 h-auto cursor-pointer"
-                              >
-                                {u.roles.some((r) => r.name === 'admin') ? 'سحب المشرف' : 'جعل مشرف'}
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* VIEW: MERCHANTS */}
-        {!isLoading && activeTab === 'merchants' && (
-          <div className="space-y-6">
-            <div>
-              <h1 className="text-xl font-bold text-slate-900">طلبات التقديم واعتماد التجار والمتاجر</h1>
-              <p className="text-xs text-slate-500 mt-1">مراجعة بيانات التجار والموافقة على متاجرهم، أو تعطيل الحسابات المخالفة</p>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
-              <div className="overflow-x-auto">
-                <table className="w-full text-right border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50/50 border-b border-slate-200">
-                      <th className="p-4 text-xs font-black text-slate-700">المتجر</th>
-                      <th className="p-4 text-xs font-black text-slate-700">مالك المتجر</th>
-                      <th className="p-4 text-xs font-black text-slate-700">رقم الهاتف</th>
-                      <th className="p-4 text-xs font-black text-slate-700">التقييم</th>
-                      <th className="p-4 text-xs font-black text-slate-700">تاريخ الانضمام</th>
-                      <th className="p-4 text-xs font-black text-slate-700">الحالة</th>
-                      <th className="p-4 text-xs font-black text-slate-700 text-left">الإجراء</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {merchants
-                      .filter((m) => m.store_name.includes(searchQuery) || m.owner_name.includes(searchQuery))
-                      .map((m) => (
-                        <tr key={m.id} className="hover:bg-slate-50/30 transition-colors">
-                          <td className="p-4">
-                            <div className="flex items-center gap-3">
-                              {m.store_logo_url ? (
-                                <img
-                                  src={m.store_logo_url}
-                                  alt={m.store_name}
-                                  className="w-10 h-10 rounded-xl object-cover border border-slate-200"
-                                  referrerPolicy="no-referrer"
-                                />
-                              ) : (
-                                <div className="w-10 h-10 bg-slate-100 text-slate-600 rounded-xl flex items-center justify-center border border-slate-200">
-                                  <Store className="w-5 h-5" />
-                                </div>
-                              )}
-                              <div>
-                                <span className="text-xs font-bold text-slate-900 block">{m.store_name}</span>
-                                {m.bio && <span className="text-[10px] text-slate-500 block max-w-xs truncate">{m.bio}</span>}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="p-4 text-xs font-bold text-slate-800">{m.owner_name}</td>
-                          <td className="p-4 text-xs font-medium text-slate-600">{m.owner_phone || 'غير متوفر'}</td>
-                          <td className="p-4 text-xs font-bold text-amber-600">⭐ {m.rating_average.toFixed(1)}</td>
-                          <td className="p-4 text-xs font-medium text-slate-500">
-                            {new Date(m.created_at).toLocaleDateString('ar-EG')}
-                          </td>
-                          <td className="p-4">{getStatusBadge(m.approval_status)}</td>
-                          <td className="p-4 text-left">
-                            <div className="inline-flex items-center gap-1.5">
-                              {m.approval_status !== 'approved' && (
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleUpdateMerchant(m.id, m.store_name, 'approved')}
-                                  className="text-[10px] py-1 bg-emerald-600 hover:bg-emerald-700 h-auto cursor-pointer text-white"
-                                >
-                                  اعتماد
-                                </Button>
-                              )}
-                              {m.approval_status !== 'suspended' && m.approval_status !== 'pending' && (
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  onClick={() => handleUpdateMerchant(m.id, m.store_name, 'suspended')}
-                                  className="text-[10px] py-1 h-auto cursor-pointer"
-                                >
-                                  تعليق
-                                </Button>
-                              )}
-                              {m.approval_status === 'pending' && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleUpdateMerchant(m.id, m.store_name, 'rejected')}
-                                  className="text-[10px] py-1 text-rose-600 hover:bg-rose-50 h-auto cursor-pointer border-rose-200"
-                                >
-                                  رفض
-                                </Button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* VIEW: PROVIDERS */}
-        {!isLoading && activeTab === 'providers' && (
-          <div className="space-y-6">
-            <div>
-              <h1 className="text-xl font-bold text-slate-900">اعتماد مقدمي الخدمات والحرفيين المهنيين</h1>
-              <p className="text-xs text-slate-500 mt-1">مراجعة مهارات مقدمي الخدمات والموافقة على طلباتهم للتفاعل في السوق</p>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
-              <div className="overflow-x-auto">
-                <table className="w-full text-right border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50/50 border-b border-slate-200">
-                      <th className="p-4 text-xs font-black text-slate-700">مقدم الخدمة</th>
-                      <th className="p-4 text-xs font-black text-slate-700">رقم الهاتف</th>
-                      <th className="p-4 text-xs font-black text-slate-700">نبذة</th>
-                      <th className="p-4 text-xs font-black text-slate-700 font-mono">المهام المنجزة</th>
-                      <th className="p-4 text-xs font-black text-slate-700">التقييم</th>
-                      <th className="p-4 text-xs font-black text-slate-700">الحالة</th>
-                      <th className="p-4 text-xs font-black text-slate-700 text-left">الإجراء</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {providers
-                      .filter((p) => p.provider_name.includes(searchQuery))
-                      .map((p) => (
-                        <tr key={p.id} className="hover:bg-slate-50/30 transition-colors">
-                          <td className="p-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-slate-100 text-slate-600 rounded-xl flex items-center justify-center border border-slate-200">
-                                <Wrench className="w-5 h-5" />
-                              </div>
-                              <span className="text-xs font-bold text-slate-900 block">{p.provider_name}</span>
-                            </div>
-                          </td>
-                          <td className="p-4 text-xs font-medium text-slate-600">{p.provider_phone || 'غير متوفر'}</td>
-                          <td className="p-4 text-xs text-slate-500 max-w-xs truncate">{p.bio || 'لا توجد نبذة'}</td>
-                          <td className="p-4 text-xs font-bold text-slate-900 font-mono">{p.jobs_completed_count}</td>
-                          <td className="p-4 text-xs font-bold text-amber-600">⭐ {p.rating_average.toFixed(1)}</td>
-                          <td className="p-4">{getStatusBadge(p.verification_status)}</td>
-                          <td className="p-4 text-left">
-                            <div className="inline-flex items-center gap-1.5">
-                              {p.verification_status !== 'approved' && (
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleUpdateProvider(p.id, p.provider_name, 'approved')}
-                                  className="text-[10px] py-1 bg-emerald-600 hover:bg-emerald-700 h-auto cursor-pointer text-white"
-                                >
-                                  اعتماد وتنشيط
-                                </Button>
-                              )}
-                              {p.verification_status === 'pending' && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleUpdateProvider(p.id, p.provider_name, 'rejected')}
-                                  className="text-[10px] py-1 text-rose-600 hover:bg-rose-50 h-auto cursor-pointer border-rose-200"
-                                >
-                                  رفض الطلب
-                                </Button>
-                              )}
-                              {p.verification_status === 'approved' && (
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  onClick={() => handleUpdateProvider(p.id, p.provider_name, 'suspended')}
-                                  className="text-[10px] py-1 h-auto cursor-pointer text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200"
-                                >
-                                  تعليق الحساب
-                                </Button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* VIEW: DRIVERS */}
-        {!isLoading && activeTab === 'drivers' && (
-          <div className="space-y-8">
-            {/* CASH OPERATIONS CONTROL ROOM */}
-            <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-xl border border-slate-800 space-y-6">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-2xl flex items-center justify-center">
-                    <Banknote className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-black text-white flex items-center gap-2">
-                      غرفة عمليات التحصيل النقدي (CASH ONLY PILOT)
-                      <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded-full border border-emerald-500/30 font-bold">
-                        عمولة المنصة 15%
-                      </span>
-                    </h2>
-                    <p className="text-xs text-slate-400 font-medium mt-0.5">
-                      متابعة تحصيلات الكاش الميدانية وأرصدة الكباتن ومستحقات المنصة التلقائية
-                    </p>
-                  </div>
-                </div>
-
-                {/* Period Filter */}
-                <div className="flex items-center gap-1.5 bg-slate-800/80 p-1.5 rounded-2xl border border-slate-700">
-                  {[
-                    { id: 'all', label: 'الكل' },
-                    { id: 'today', label: 'اليوم' },
-                    { id: 'yesterday', label: 'أمس' },
-                    { id: 'this_week', label: 'هذا الأسبوع' },
-                    { id: 'this_month', label: 'هذا الشهر' },
-                  ].map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() => handleChangeCashPeriod(p.id as any)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                        cashPeriod === p.id
-                          ? 'bg-emerald-500 text-slate-950 shadow-md'
-                          : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
-                      }`}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Metric Cards Grid */}
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                <div className="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-4">
-                  <span className="text-[11px] text-slate-400 font-bold block">إجمالي الرحلات</span>
-                  <div className="text-xl font-black text-white mt-1 font-mono">
-                    {cashAnalytics?.total_rides || adminRides.length}
-                  </div>
-                  <span className="text-[10px] text-slate-500 font-medium">رحلة مسجلة</span>
-                </div>
-
-                <div className="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-4">
-                  <span className="text-[11px] text-slate-400 font-bold block">الرحلات المكتملة</span>
-                  <div className="text-xl font-black text-emerald-400 mt-1 font-mono">
-                    {cashAnalytics?.completed_rides || adminRides.filter((r) => r.status === 'completed').length}
-                  </div>
-                  <span className="text-[10px] text-emerald-400/80 font-medium">مكتملة وناجحة</span>
-                </div>
-
-                <div className="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-4">
-                  <span className="text-[11px] text-slate-400 font-bold block">إجمالي قيمة الرحلات</span>
-                  <div className="text-xl font-black text-white mt-1 font-mono">
-                    {cashAnalytics?.total_amount ||
-                      adminRides
-                        .filter((r) => r.status === 'completed')
-                        .reduce((sum, r) => sum + (r.final_fare || r.estimated_fare || 0), 0)}{' '}
-                    <span className="text-xs">ج.م</span>
-                  </div>
-                  <span className="text-[10px] text-slate-500 font-medium">إجمالي التكلفة</span>
-                </div>
-
-                <div className="bg-emerald-950/40 border border-emerald-800/60 rounded-2xl p-4">
-                  <span className="text-[11px] text-emerald-300 font-bold block">المبالغ المحصلة كاش</span>
-                  <div className="text-xl font-black text-emerald-300 mt-1 font-mono">
-                    {cashAnalytics?.collected_amount ||
-                      adminRides
-                        .filter((r) => r.payment_status === 'paid_cash')
-                        .reduce((sum, r) => sum + (r.final_fare || r.estimated_fare || 0), 0)}{' '}
-                    <span className="text-xs">ج.م</span>
-                  </div>
-                  <span className="text-[10px] text-emerald-400/80 font-medium">مسددة نقدياً بالكامل</span>
-                </div>
-
-                <div className="bg-blue-950/40 border border-blue-800/60 rounded-2xl p-4">
-                  <span className="text-[11px] text-blue-300 font-bold block">عمولة المنصة (15%)</span>
-                  <div className="text-xl font-black text-blue-300 mt-1 font-mono">
-                    {cashAnalytics?.total_commission ||
-                      Math.round(
-                        adminRides
-                          .filter((r) => r.status === 'completed')
-                          .reduce((sum, r) => sum + (r.final_fare || r.estimated_fare || 0), 0) * 0.15
-                      )}{' '}
-                    <span className="text-xs">ج.م</span>
-                  </div>
-                  <span className="text-[10px] text-blue-400/80 font-medium">إيرادات كفراوي جو</span>
-                </div>
-
-                <div className="bg-amber-950/40 border border-amber-800/60 rounded-2xl p-4">
-                  <span className="text-[11px] text-amber-300 font-bold block">أرباح الكباتن الصافية</span>
-                  <div className="text-xl font-black text-amber-300 mt-1 font-mono">
-                    {cashAnalytics?.total_driver_earnings ||
-                      Math.round(
-                        adminRides
-                          .filter((r) => r.status === 'completed')
-                          .reduce((sum, r) => sum + (r.final_fare || r.estimated_fare || 0), 0) * 0.85
-                      )}{' '}
-                    <span className="text-xs">ج.م</span>
-                  </div>
-                  <span className="text-[10px] text-amber-400/80 font-medium">مستحقات السائقين 85%</span>
-                </div>
-              </div>
-
-              {/* Driver Cash Balances Table */}
-              {cashAnalytics?.driver_balances && cashAnalytics.driver_balances.length > 0 && (
-                <div className="mt-4 bg-slate-800/70 border border-slate-700/80 rounded-2xl p-4">
-                  <h4 className="text-xs font-black text-slate-200 mb-3 flex items-center gap-2">
-                    <Wallet className="w-4 h-4 text-emerald-400" />
-                    أرصدة الكاش بحوزة الكباتن (Driver Cash Balances)
-                  </h4>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-right text-xs">
-                      <thead>
-                        <tr className="text-slate-400 border-b border-slate-700/80 pb-2">
-                          <th className="pb-2 font-bold">اسم الكابتن</th>
-                          <th className="pb-2 font-bold">الهاتف</th>
-                          <th className="pb-2 font-bold">الرحلات</th>
-                          <th className="pb-2 font-bold text-emerald-400">إجمالي الكاش المحصل</th>
-                          <th className="pb-2 font-bold text-amber-400">صافي ربح الكابتن (85%)</th>
-                          <th className="pb-2 font-bold text-blue-400">مستحق للمنصة (15%)</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-700/40">
-                        {cashAnalytics.driver_balances.map((b: any, idx: number) => (
-                          <tr key={idx} className="hover:bg-slate-700/20">
-                            <td className="py-2.5 font-bold text-white">{b.driver_name}</td>
-                            <td className="py-2.5 text-slate-400 font-mono">{b.driver_phone || '-'}</td>
-                            <td className="py-2.5 font-bold text-slate-300">{b.completed_rides}</td>
-                            <td className="py-2.5 font-bold text-emerald-300 font-mono">{b.cash_collected} ج.م</td>
-                            <td className="py-2.5 font-bold text-amber-300 font-mono">{b.driver_net_earnings} ج.م</td>
-                            <td className="py-2.5 font-bold text-blue-300 font-mono">{b.platform_commission_due} ج.م</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <h1 className="text-xl font-bold text-slate-900">اعتماد ومتابعة سائقي Kafrawy Go</h1>
-              <p className="text-xs text-slate-500 mt-1">التحقق من الهوية الوطنية ورقم رخص القيادة لتأمين حماية الركاب والرحلات</p>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
-              <div className="overflow-x-auto">
-                <table className="w-full text-right border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50/50 border-b border-slate-200">
-                      <th className="p-4 text-xs font-black text-slate-700">السائق الكابتن</th>
-                      <th className="p-4 text-xs font-black text-slate-700">رقم الهاتف</th>
-                      <th className="p-4 text-xs font-black text-slate-700 font-mono">الرقم القومي (ID)</th>
-                      <th className="p-4 text-xs font-black text-slate-700 font-mono">رخصة القيادة</th>
-                      <th className="p-4 text-xs font-black text-slate-700">توصيل الآن</th>
-                      <th className="p-4 text-xs font-black text-slate-700">التقييم</th>
-                      <th className="p-4 text-xs font-black text-slate-700">الحالة</th>
-                      <th className="p-4 text-xs font-black text-slate-700 text-left">الإجراء</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {drivers
-                      .filter((d) => d.driver_name.includes(searchQuery))
-                      .map((d) => (
-                        <tr key={d.id} className="hover:bg-slate-50/30 transition-colors">
-                          <td className="p-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-slate-100 text-slate-600 rounded-xl flex items-center justify-center border border-slate-200">
-                                <Car className="w-5 h-5" />
-                              </div>
-                              <span className="text-xs font-bold text-slate-900 block">{d.driver_name}</span>
-                            </div>
-                          </td>
-                          <td className="p-4 text-xs font-medium text-slate-600">{d.driver_phone || 'غير متوفر'}</td>
-                          <td className="p-4 text-xs font-mono font-medium text-slate-500">{d.national_id}</td>
-                          <td className="p-4 text-xs font-mono font-medium text-slate-500">{d.license_number}</td>
-                          <td className="p-4">
-                            {d.is_online ? (
-                              <Badge variant="success">متصل (Online)</Badge>
-                            ) : (
-                              <Badge variant="neutral">غير متصل (Offline)</Badge>
-                            )}
-                          </td>
-                          <td className="p-4 text-xs font-bold text-amber-600">⭐ {d.rating_average.toFixed(1)}</td>
-                          <td className="p-4">{getStatusBadge(d.approval_status)}</td>
-                          <td className="p-4 text-left">
-                            <div className="inline-flex items-center gap-1.5">
-                              {d.approval_status !== 'approved' && (
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleUpdateDriver(d.id, d.driver_name, 'approved')}
-                                  className="text-[10px] py-1 bg-emerald-600 hover:bg-emerald-700 h-auto cursor-pointer text-white"
-                                >
-                                  اعتماد
-                                </Button>
-                              )}
-                              {d.approval_status !== 'suspended' && d.approval_status !== 'pending' && (
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  onClick={() => handleUpdateDriver(d.id, d.driver_name, 'suspended')}
-                                  className="text-[10px] py-1 h-auto cursor-pointer"
-                                >
-                                  تعليق
-                                </Button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* RIDES MONITORING SECTION */}
-            <div className="mt-8 space-y-4">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-blue-600 animate-pulse" />
-                  مراقبة رحلات Kafrawy Go والتحصيل النقدي
-                </h2>
-                <p className="text-xs text-slate-500 mt-1">تتبع المسارات المباشرة للرحلات وأسعار التوصيل وحالة الدفع النقدي (Cash Only)</p>
+                <h2 className="text-base font-black text-slate-900">إدارة حسابات المستخدمين والمهام</h2>
+                <p className="text-xs text-slate-500">تنشيط الحسابات، إدارة الأدوار (Roles)، والتحقق من RLS.</p>
               </div>
-
-              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-right border-collapse">
-                    <thead>
-                      <tr className="bg-slate-50/50 border-b border-slate-200">
-                        <th className="p-4 text-xs font-black text-slate-700">الراكب (العميل)</th>
-                        <th className="p-4 text-xs font-black text-slate-700">الكابتن المستلم</th>
-                        <th className="p-4 text-xs font-black text-slate-700">خط السير (العنوان)</th>
-                        <th className="p-4 text-xs font-black text-slate-700">التكلفة (المبلغ)</th>
-                        <th className="p-4 text-xs font-black text-slate-700">حالة الرحلة</th>
-                        <th className="p-4 text-xs font-black text-slate-700">حالة الكاش</th>
-                        <th className="p-4 text-xs font-black text-slate-700">تاريخ الطلب</th>
-                        <th className="p-4 text-xs font-black text-slate-700 text-left">إجراء الكاش</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {adminRides.length === 0 ? (
-                        <tr>
-                          <td colSpan={8} className="p-8 text-center text-xs text-slate-400 font-bold">
-                            لا توجد أي رحلات مسجلة في أسطول كفراوي جو حالياً.
-                          </td>
-                        </tr>
-                      ) : (
-                        adminRides.map((ride) => {
-                          const fare = ride.final_fare || ride.estimated_fare || 0;
-                          return (
-                            <tr key={ride.id} className="hover:bg-slate-50/30 transition-colors text-xs font-medium text-slate-600">
-                              <td className="p-4 font-bold text-slate-950">{ride.customer_name || 'راكب كفراوي'}</td>
-                              <td className="p-4 font-bold text-slate-900">{ride.driver_name || 'لم يحدد بعد'}</td>
-                              <td className="p-4 max-w-xs truncate">
-                                <span className="text-emerald-700 block">من: {ride.pickup_address_text}</span>
-                                <span className="text-rose-700 block">إلى: {ride.dropoff_address_text}</span>
-                              </td>
-                              <td className="p-4 text-emerald-700 font-black font-mono">
-                                {fare} ج.م
-                                <span className="block text-[10px] text-slate-400 font-sans font-normal">
-                                  عمولة: {Math.round(fare * 0.15)} ج.م
-                                </span>
-                              </td>
-                              <td className="p-4">
-                                {ride.status === 'requested' && <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-700 text-xs font-bold rounded-lg border border-amber-200">بانتظار كابتن</span>}
-                                {ride.status === 'driver_assigned' && <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-lg border border-blue-200">الكابتن قادم</span>}
-                                {ride.status === 'arrived' && <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200">وصل الموقع</span>}
-                                {ride.status === 'in_transit' && <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-50 text-purple-700 text-xs font-bold rounded-lg border border-purple-200">في الطريق</span>}
-                                {ride.status === 'completed' && <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-800 text-xs font-bold rounded-lg border border-emerald-300">مكتملة</span>}
-                                {ride.status === 'cancelled' && <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-50 text-rose-700 text-xs font-bold rounded-lg border border-rose-200">ملغاة</span>}
-                              </td>
-                              <td className="p-4">
-                                {ride.payment_status === 'paid_cash' ? (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[11px] font-bold rounded-md border border-emerald-300">
-                                    <Banknote className="w-3 h-3" />
-                                    تم استلام الكاش
-                                  </span>
-                                ) : ride.status === 'completed' ? (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-800 text-[11px] font-bold rounded-md border border-amber-300">
-                                    بانتظار تحصيل الكاش
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-400 text-[11px]">كاش عند الوصول</span>
-                                )}
-                              </td>
-                              <td className="p-4 font-mono text-slate-400">{new Date(ride.created_at).toLocaleString('ar-EG')}</td>
-                              <td className="p-4 text-left">
-                                {ride.status === 'completed' && ride.payment_status !== 'paid_cash' && (
-                                  <Button
-                                    size="sm"
-                                    onClick={() => handleMarkCashCollected(ride.id, fare)}
-                                    className="text-[10px] py-1 bg-emerald-600 hover:bg-emerald-700 text-white h-auto cursor-pointer flex items-center gap-1"
-                                  >
-                                    <Banknote className="w-3 h-3" />
-                                    تأكيد التحصيل
-                                  </Button>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* VIEW: ORDERS */}
-        {!isLoading && activeTab === 'orders' && (
-          <div className="space-y-6">
-            <div>
-              <h1 className="text-xl font-bold text-slate-900">سجل طلبات المتجر والمبيعات</h1>
-              <p className="text-xs text-slate-500 mt-1">مراقبة الفواتير الإجمالية وتاريخ الطلبات وحالتها داخل Kafrawy Super App</p>
+              <Badge className="bg-slate-100 text-slate-700">{users.length} مستخدم</Badge>
             </div>
 
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
               <div className="overflow-x-auto">
-                <table className="w-full text-right border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50/50 border-b border-slate-200">
-                      <th className="p-4 text-xs font-black text-slate-700">رقم الطلب</th>
-                      <th className="p-4 text-xs font-black text-slate-700">العميل</th>
-                      <th className="p-4 text-xs font-black text-slate-700">رقم الهاتف</th>
-                      <th className="p-4 text-xs font-black text-slate-700">المتجر</th>
-                      <th className="p-4 text-xs font-black text-slate-700">المبلغ الإجمالي</th>
-                      <th className="p-4 text-xs font-black text-slate-700">التاريخ</th>
-                      <th className="p-4 text-xs font-black text-slate-700">الحالة</th>
+                <table className="w-full text-right text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
+                    <tr>
+                      <th className="p-3 px-4">المستخدم</th>
+                      <th className="p-3 px-4">رقم الهاتف</th>
+                      <th className="p-3 px-4">الحالة</th>
+                      <th className="p-3 px-4">الأدوار الممنوحة</th>
+                      <th className="p-3 px-4 text-center">الإجراءات</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {orders
-                      .filter((o) => o.customer_name.includes(searchQuery) || o.store_name.includes(searchQuery))
-                      .map((o) => (
-                        <tr key={o.id} className="hover:bg-slate-50/30 transition-colors">
-                          <td className="p-4 text-xs font-bold text-slate-900 font-mono">{o.id}</td>
-                          <td className="p-4 text-xs font-bold text-slate-800">{o.customer_name}</td>
-                          <td className="p-4 text-xs font-medium text-slate-600">{o.customer_phone || 'غير متوفر'}</td>
-                          <td className="p-4 text-xs font-bold text-emerald-700">{o.store_name}</td>
-                          <td className="p-4 text-xs font-bold text-slate-900">
-                            {o.total_amount.toLocaleString('ar-EG')} ج.م
-                          </td>
-                          <td className="p-4 text-xs font-medium text-slate-500">
-                            {new Date(o.created_at).toLocaleString('ar-EG')}
-                          </td>
-                          <td className="p-4">{getStatusBadge(o.status)}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* VIEW: SERVICES */}
-        {!isLoading && activeTab === 'services' && (
-          <div className="space-y-6">
-            <div>
-              <h1 className="text-xl font-bold text-slate-900">طلبات الصيانة والخدمات المهنية</h1>
-              <p className="text-xs text-slate-500 mt-1">تتبع الاتفاقات المالية ومقدمي الخدمات والحرفيين لحل الصراعات البرمجية والتشغيلية</p>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
-              <div className="overflow-x-auto">
-                <table className="w-full text-right border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50/50 border-b border-slate-200">
-                      <th className="p-4 text-xs font-black text-slate-700">معرّف الطلب</th>
-                      <th className="p-4 text-xs font-black text-slate-700">الخدمة المطلوبة</th>
-                      <th className="p-4 text-xs font-black text-slate-700">العميل صاحب الطلب</th>
-                      <th className="p-4 text-xs font-black text-slate-700">مقدم الخدمة المكلّف</th>
-                      <th className="p-4 text-xs font-black text-slate-700">السعر المتفق عليه</th>
-                      <th className="p-4 text-xs font-black text-slate-700">تاريخ الإنشاء</th>
-                      <th className="p-4 text-xs font-black text-slate-700">الحالة</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {serviceRequests
-                      .filter((s) => s.customer_name.includes(searchQuery) || s.service_title.includes(searchQuery))
-                      .map((s) => (
-                        <tr key={s.id} className="hover:bg-slate-50/30 transition-colors">
-                          <td className="p-4 text-xs font-medium text-slate-500 font-mono">{s.id}</td>
-                          <td className="p-4 text-xs font-bold text-slate-900">{s.service_title}</td>
-                          <td className="p-4 text-xs font-medium text-slate-800">{s.customer_name}</td>
-                          <td className="p-4 text-xs font-medium text-slate-700">{s.provider_name}</td>
-                          <td className="p-4 text-xs font-black text-emerald-800">
-                            {s.agreed_price ? `${s.agreed_price.toLocaleString('ar-EG')} ج.م` : 'لم يتم الاتفاق'}
-                          </td>
-                          <td className="p-4 text-xs font-medium text-slate-500">
-                            {new Date(s.created_at).toLocaleDateString('ar-EG')}
-                          </td>
-                          <td className="p-4">{getStatusBadge(s.status)}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* VIEW: ROLES & MATRIX */}
-        {!isLoading && activeTab === 'roles' && (
-          <div className="space-y-6">
-            <div>
-              <h1 className="text-xl font-bold text-slate-900">مصفوفة الصلاحيات والأدوار الموحدة</h1>
-              <p className="text-xs text-slate-500 mt-1">تحديد ما يسمح لكل دور بتنفيذه داخل المنصة. جميع التعديلات تعتمد على Supabase RLS مباشرة.</p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Roles reference card */}
-              <div className="md:col-span-1 space-y-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm font-bold flex items-center gap-2">
-                      <Shield className="w-5 h-5 text-emerald-600" />
-                      <span>الأدوار المتاحة بنظام كفراوي</span>
-                    </CardTitle>
-                    <CardDescription>قائمة فئات الحسابات الأساسية</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {roles.map((r) => (
-                      <div key={r.id} className="p-3 bg-slate-50 rounded-xl border border-slate-150">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-900 font-mono">{r.name}</span>
-                          <span className="text-[10px] text-slate-400 font-mono">{r.id.split('-')[0]}...</span>
-                        </div>
-                        <p className="text-[11px] text-slate-500 mt-1 leading-normal">{r.description_ar}</p>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Security matrix */}
-              <div className="md:col-span-2">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm font-bold flex items-center gap-2">
-                      <Key className="w-5 h-5 text-emerald-600" />
-                      <span>مصفوفة الصلاحيات والحظر (Security Matrix)</span>
-                    </CardTitle>
-                    <CardDescription>اربط الصلاحيات البرمجية بالأدوار المناسبة</CardDescription>
-                  </CardHeader>
-                  <CardContent className="overflow-x-auto">
-                    <table className="w-full text-right text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-200">
-                          <th className="pb-3 text-slate-700 font-bold">رمز الصلاحية برمجياً</th>
-                          {roles.map((r) => (
-                            <th key={r.id} className="pb-3 text-center text-slate-800 font-bold font-mono">
-                              {r.name}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {permissions.map((p) => (
-                          <tr key={p.id} className="hover:bg-slate-50/20">
-                            <td className="py-3">
-                              <span className="font-mono font-bold text-slate-900 block">{p.code}</span>
-                              <span className="text-[10px] text-slate-500">{p.description_ar}</span>
-                            </td>
-                            {roles.map((r) => {
-                              const isAssigned = rolePermMap[r.id]?.has(p.id) ?? false;
-                              return (
-                                <td key={r.id} className="py-3 text-center">
-                                  <input
-                                    type="checkbox"
-                                    checked={isAssigned}
-                                    onChange={() => handleToggleRolePermission(r.id, p.id, isAssigned)}
-                                    className="w-4 h-4 rounded-md border-slate-300 text-emerald-600 focus:ring-emerald-500 accent-emerald-600 cursor-pointer"
-                                  />
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* VIEW: AUDIT LOGS */}
-        {!isLoading && activeTab === 'audit' && (
-          <div className="space-y-6">
-            <div>
-              <h1 className="text-xl font-bold text-slate-900">سجل مراقبة العمليات والحماية (Audit Logs)</h1>
-              <p className="text-xs text-slate-500 mt-1">سجل أمني صارم وغير قابل للتعديل لتتبع عمليات الاعتماد، والرفض، وتعديل الصلاحيات.</p>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
-              <div className="overflow-x-auto">
-                <table className="w-full text-right border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50/50 border-b border-slate-200">
-                      <th className="p-4 text-xs font-black text-slate-700">المسؤول (Actor)</th>
-                      <th className="p-4 text-xs font-black text-slate-700">الإجراء</th>
-                      <th className="p-4 text-xs font-black text-slate-700">الجدول المستهدف</th>
-                      <th className="p-4 text-xs font-black text-slate-700">رقم الكيان المستهدف</th>
-                      <th className="p-4 text-xs font-black text-slate-700">الوقت والتاريخ</th>
-                      <th className="p-4 text-xs font-black text-slate-700 text-left">التفاصيل</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {auditLogs
-                      .filter((log) => log.actor_name.includes(searchQuery) || log.action.includes(searchQuery))
-                      .map((log) => (
-                        <tr key={log.id} className="hover:bg-slate-50/30 transition-colors">
-                          <td className="p-4">
-                            <span className="text-xs font-bold text-slate-950">{log.actor_name}</span>
-                            {log.actor_id && <span className="text-[9px] text-slate-400 block font-mono">{log.actor_id}</span>}
-                          </td>
-                          <td className="p-4 text-xs">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-md font-mono text-[10px] font-extrabold bg-slate-100 border border-slate-200 text-slate-800">
-                              {log.action}
-                            </span>
-                          </td>
-                          <td className="p-4 text-xs font-medium text-slate-600">{log.target_entity}</td>
-                          <td className="p-4 text-xs font-mono text-slate-500">{log.target_id || '-'}</td>
-                          <td className="p-4 text-xs font-medium text-slate-500">
-                            {new Date(log.created_at).toLocaleString('ar-EG')}
-                          </td>
-                          <td className="p-4 text-left">
+                    {users.map((u) => (
+                      <tr key={u.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="p-3 px-4 font-bold text-slate-900">{u.full_name}</td>
+                        <td className="p-3 px-4 font-mono text-slate-600">{u.phone_number || 'بدون هاتف'}</td>
+                        <td className="p-3 px-4">
+                          {u.is_active ? (
+                            <Badge className="bg-emerald-100 text-emerald-800">نشط</Badge>
+                          ) : (
+                            <Badge className="bg-rose-100 text-rose-800">معطل</Badge>
+                          )}
+                        </td>
+                        <td className="p-3 px-4">
+                          <div className="flex flex-wrap gap-1">
+                            {u.roles.map((r) => (
+                              <span key={r.id} className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+                                {r.name}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="p-3 px-4 text-center">
+                          <div className="flex items-center justify-center gap-2">
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => setSelectedLog(log)}
-                              className="text-[10px] py-1 h-auto cursor-pointer flex items-center gap-1.5"
+                              onClick={() => handleToggleUserActive(u.id, u.is_active)}
+                              className="h-7 text-[11px]"
                             >
-                              <Eye className="w-3.5 h-3.5" />
-                              <span>استعراض القيم</span>
+                              {u.is_active ? 'تعطيل' : 'تنشيط'}
                             </Button>
-                          </td>
-                        </tr>
-                      ))}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                handleToggleUserRole(
+                                  u.id,
+                                  'admin',
+                                  u.roles.some((r) => r.name === 'admin')
+                                )
+                              }
+                              className="h-7 text-[11px]"
+                            >
+                              {u.roles.some((r) => r.name === 'admin') ? 'سحب الإدارة' : 'ترقية لإداري'}
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -1407,128 +715,174 @@ export const AdminRbacPage: React.FC = () => {
           </div>
         )}
 
-        {/* VIEW: SETTINGS */}
-        {!isLoading && activeTab === 'settings' && (
-          <div className="space-y-6">
-            <div>
-              <h1 className="text-xl font-bold text-slate-900">الإعدادات العامة وإعدادات الأمان</h1>
-              <p className="text-xs text-slate-500 mt-1">تعديل بارامترات الأمان العامة ومراجعة حالة التفعيل</p>
+        {/* TAB 10: MERCHANTS */}
+        {!isLoading && activeTab === 'merchants' && (
+          <div className="space-y-4">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-black text-slate-900">إدارة التجار والمتاجر</h2>
+                <p className="text-xs text-slate-500">مراجعة طلبات الانضمام والاعتماد التجاري.</p>
+              </div>
+              <Badge className="bg-slate-100 text-slate-700">{merchants.length} متجر</Badge>
             </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-bold flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-emerald-600" />
-                  <span>حالة خدمات Supabase و RLS</span>
-                </CardTitle>
-                <CardDescription>التواصل مع خادم كفراوي</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4 divide-y divide-slate-100">
-                <div className="py-3 flex justify-between items-center text-xs">
-                  <span className="font-bold text-slate-700">حالة قاعدة البيانات:</span>
-                  <span className="font-extrabold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100 flex items-center gap-1">
-                    <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping" />
-                    <span>متصل وبحالة ممتازة</span>
-                  </span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {merchants.map((m) => (
+                <div key={m.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-slate-900 text-sm">{m.store_name}</h3>
+                    <Badge className={m.approval_status === 'approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}>
+                      {m.approval_status === 'approved' ? 'معتمد' : 'قيد المراجعة'}
+                    </Badge>
+                  </div>
+                  <div className="text-xs text-slate-600">
+                    <div>المالك: <span className="font-bold">{m.owner_name}</span> ({m.owner_phone})</div>
+                    <div>التقييم: ⭐ {m.rating_average.toFixed(1)}</div>
+                  </div>
                 </div>
-                <div className="py-3 flex justify-between items-center text-xs">
-                  <span className="font-bold text-slate-700">إلزامية RLS (Row Level Security):</span>
-                  <span className="font-extrabold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100 flex items-center gap-1">
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>مفعّل وصارم (Strict Mode)</span>
-                  </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 11: PROVIDERS */}
+        {!isLoading && activeTab === 'providers' && (
+          <div className="space-y-4">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-black text-slate-900">إدارة مقدمي الخدمات والصيانة</h2>
+                <p className="text-xs text-slate-500">مراجعة الحرفيين والمهنيين المعتمدين.</p>
+              </div>
+              <Badge className="bg-slate-100 text-slate-700">{providers.length} مقدم خدمة</Badge>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {providers.map((p) => (
+                <div key={p.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-slate-900 text-sm">{p.provider_name}</h3>
+                    <Badge className={p.verification_status === 'approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}>
+                      {p.verification_status === 'approved' ? 'معتمد' : 'قيد المراجعة'}
+                    </Badge>
+                  </div>
+                  <div className="text-xs text-slate-600">
+                    <div>الهاتف: {p.provider_phone}</div>
+                    <div>المهام المنجزة: {p.jobs_completed_count}</div>
+                  </div>
                 </div>
-                <div className="py-3 flex justify-between items-center text-xs">
-                  <span className="font-bold text-slate-700">مفتاح خدمة الخدمة (Service Role Key):</span>
-                  <span className="font-extrabold text-rose-700 bg-rose-50 px-3 py-1 rounded-full border border-rose-100 flex items-center gap-1">
-                    <X className="w-4 h-4" />
-                    <span>مخفي / محمي بالكامل</span>
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 12: GENERAL OVERVIEW / DASHBOARD */}
+        {!isLoading && activeTab === 'dashboard' && (
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-black text-slate-900">نظام كفراوي جو الموحد</h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  المنظومة مؤمنة بسياسات RLS وقواعد أمان PostgreSQL. كافة البيانات متزامنة لحظياً عبر Realtime.
+                </p>
+              </div>
+            </div>
           </div>
         )}
       </main>
 
-      {/* CONFIRMATION MODAL */}
-      <Modal
-        isOpen={!!confirmModal?.isOpen}
-        onClose={() => setConfirmModal(null)}
-        title={confirmModal?.title || 'تأكيد العملية'}
-        description={confirmModal?.desc || ''}
-      >
-        <div className="flex items-center justify-end gap-3 pt-4">
-          <Button
-            variant="outline"
-            onClick={() => setConfirmModal(null)}
-            className="cursor-pointer text-xs"
-            disabled={isLoading}
-          >
-            إلغاء
-          </Button>
-          <Button
-            onClick={confirmModal?.action}
-            className="bg-slate-900 hover:bg-slate-800 text-white cursor-pointer text-xs font-bold"
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <span className="flex items-center gap-1">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>جاري التنفيذ...</span>
-              </span>
-            ) : (
-              'تأكيد وتنفيذ'
-            )}
-          </Button>
-        </div>
-      </Modal>
+      {/* RIDE DETAILS DRAWER */}
+      <RideDetailsDrawer
+        ride={selectedRide}
+        isOpen={isRideDrawerOpen}
+        onClose={() => {
+          setIsRideDrawerOpen(false);
+          setSelectedRide(null);
+        }}
+        onConfirmCashPayment={(ride) => {
+          setIsRideDrawerOpen(false);
+          setCashConfirmRide(ride);
+        }}
+      />
 
-      {/* AUDIT LOG VALUE PREVIEW MODAL */}
-      <Modal
-        isOpen={!!selectedLog}
-        onClose={() => setSelectedLog(null)}
-        title="تفاصيل الإجراء الإداري"
-        description="استعراض قيم الحالة القديمة والجديدة المسجلة في قاعدة البيانات"
-        size="lg"
-      >
-        {selectedLog && (
-          <div className="space-y-4 font-sans text-xs">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-150">
-                <span className="font-bold text-slate-500 block mb-1">العملية:</span>
-                <span className="font-mono font-black text-slate-900">{selectedLog.action}</span>
+      {/* DRIVER PROFILE DRAWER */}
+      <DriverProfileDrawer
+        driver={selectedDriver}
+        isOpen={isDriverDrawerOpen}
+        onClose={() => {
+          setIsDriverDrawerOpen(false);
+          setSelectedDriver(null);
+        }}
+        onUpdateStatus={handleUpdateDriverStatus}
+        onViewActiveRide={handleSelectRideById}
+      />
+
+      {/* CASH PAYMENT CONFIRMATION MODAL */}
+      {cashConfirmRide && (
+        <div className="fixed inset-0 z-50 overflow-y-auto dir-rtl flex items-center justify-center p-4">
+          <div
+            onClick={() => setCashConfirmRide(null)}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
+          />
+
+          <div className="relative bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-2xl bg-emerald-100 text-emerald-800">
+                <Banknote className="w-6 h-6" />
               </div>
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-150">
-                <span className="font-bold text-slate-500 block mb-1">الكيان المستهدف:</span>
-                <span className="font-mono font-bold text-slate-800">{selectedLog.target_entity}</span>
+              <div>
+                <h3 className="text-base font-black text-slate-900">تأكيد تحصيل الأجرة نقداً</h3>
+                <p className="text-xs text-slate-500">
+                  طلب رحلة #{cashConfirmRide.id.substring(0, 8)}
+                </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 bg-rose-50/30 rounded-xl border border-rose-100">
-                <span className="font-bold text-rose-800 block mb-2">القيمة السابقة (Old Value):</span>
-                <pre className="font-mono text-[10px] whitespace-pre-wrap text-rose-900 bg-white p-2.5 rounded-lg border border-rose-100">
-                  {JSON.stringify(selectedLog.old_value || {}, null, 2)}
-                </pre>
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
+              <div className="flex items-center justify-between font-bold">
+                <span className="text-slate-600">إجمالي الأجرة المطلوب تحصيلها:</span>
+                <span className="text-slate-900 text-sm">
+                  {cashConfirmRide.customer_total || cashConfirmRide.final_fare || cashConfirmRide.estimated_fare} ج.م
+                </span>
               </div>
-
-              <div className="p-4 bg-emerald-50/30 rounded-xl border border-emerald-100">
-                <span className="font-bold text-emerald-800 block mb-2">القيمة الجديدة (New Value):</span>
-                <pre className="font-mono text-[10px] whitespace-pre-wrap text-emerald-900 bg-white p-2.5 rounded-lg border border-emerald-100">
-                  {JSON.stringify(selectedLog.new_value || {}, null, 2)}
-                </pre>
+              <div className="flex items-center justify-between text-indigo-700">
+                <span>عمولة المنصة المقتطعة (15%):</span>
+                <span className="font-bold">
+                  {cashConfirmRide.platform_commission || Math.round((cashConfirmRide.customer_total || 0) * 0.15 * 100) / 100} ج.م
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-emerald-700">
+                <span>صافي مستحقات الكابتن (85%):</span>
+                <span className="font-bold">
+                  {cashConfirmRide.driver_earning || Math.round((cashConfirmRide.customer_total || 0) * 0.85 * 100) / 100} ج.م
+                </span>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-4">
-              <Button onClick={() => setSelectedLog(null)} className="bg-slate-900 hover:bg-slate-800 text-white cursor-pointer text-xs font-bold">
-                إغلاق النافذة
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              عند التأكيد، سيتم استدعاء RPC الآمن (<code className="font-mono text-emerald-700 font-bold">mark_cash_payment_received</code>) وتحديث حالة الرحلة إلى <span className="font-bold text-emerald-700">paid_cash</span> وتسجيل العملية في سجلات الأمان.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCashConfirmRide(null)}
+                className="text-xs"
+              >
+                إلغاء
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => handleConfirmCashCollection(cashConfirmRide)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
+              >
+                تأكيد الاستلام والتسجيل
               </Button>
             </div>
           </div>
-        )}
-      </Modal>
+        </div>
+      )}
     </div>
   );
 };
+export default AdminRbacPage;
