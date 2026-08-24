@@ -41,6 +41,15 @@ export interface Ride {
   dropoff_longitude: number;
   estimated_fare: number | null;
   final_fare: number | null;
+  customer_total?: number | null;
+  driver_earning?: number | null;
+  platform_commission?: number | null;
+  commission_rate?: number | null;
+  payment_method?: 'cash' | 'wallet' | 'card' | 'online';
+  payment_status?: 'pending' | 'completed' | 'failed' | 'refunded' | 'cancelled';
+  cancelled_by?: string | null;
+  cancellation_reason?: string | null;
+  cancelled_at?: string | null;
   status: RideStatus;
   created_at: string;
   updated_at: string;
@@ -403,6 +412,23 @@ export const mobilityApi = {
       return;
     }
 
+    // 1. Verify Driver is Approved
+    if (isOnline) {
+      const { data: driverInfo, error: checkErr } = await supabase
+        .from('drivers')
+        .select('approval_status')
+        .eq('id', driverId)
+        .maybeSingle();
+      
+      if (checkErr || !driverInfo) {
+        throw new Error('لا يمكن التحقق من حالة الكابتن.');
+      }
+      
+      if (driverInfo.approval_status !== 'approved') {
+        throw new Error('لا يمكنك الاتصال لأن حسابك غير معتمد بعد.');
+      }
+    }
+
     const { error } = await supabase
       .from('drivers')
       .update({ is_online: isOnline, updated_at: new Date().toISOString() })
@@ -479,7 +505,7 @@ export const mobilityApi = {
   /**
    * Cancel a ride
    */
-  async cancelRide(rideId: string, profileId: string): Promise<void> {
+  async cancelRide(rideId: string, profileId: string, reason: string = 'Cancelled by user'): Promise<void> {
     if (!isSupabaseConfigured()) {
       const index = mockRides.findIndex(r => r.id === rideId);
       if (index !== -1) {
@@ -489,6 +515,34 @@ export const mobilityApi = {
       return;
     }
 
+    // 1. Try secure RPC
+    try {
+      const { data: rpcData, error: rpcError } = await supabase.rpc('cancel_ride', {
+        p_ride_id: rideId,
+        p_reason: reason
+      });
+
+      if (!rpcError && rpcData?.success) {
+        return;
+      }
+      if (rpcError && rpcError.message && (
+        rpcError.message.includes('لا يمكن إلغاء') ||
+        rpcError.message.includes('Access Denied') ||
+        rpcError.message.includes('not found')
+      )) {
+        throw new Error(rpcError.message);
+      }
+    } catch (e: any) {
+      if (e.message && (
+        e.message.includes('لا يمكن إلغاء') ||
+        e.message.includes('Access Denied') ||
+        e.message.includes('not found')
+      )) {
+        throw e;
+      }
+    }
+
+    // 2. Direct update fallback
     const { error } = await supabase
       .from('rides')
       .update({ status: 'cancelled', updated_at: new Date().toISOString() })
@@ -661,7 +715,38 @@ export const mobilityApi = {
       return;
     }
 
-    // Safely update with status lock to ensure absolute atomic state safety
+    // 1. Try atomic RPC for maximum security and race condition protection
+    try {
+      const { data: rpcData, error: rpcError } = await supabase.rpc('driver_accept_ride', {
+        p_ride_id: rideId,
+        p_driver_id: driverId,
+        p_vehicle_id: vehicleId
+      });
+
+      if (!rpcError && rpcData?.success) {
+        return;
+      }
+      if (rpcError && rpcError.message && (
+        rpcError.message.includes('غير متاحة') || 
+        rpcError.message.includes('تم قبولها') || 
+        rpcError.message.includes('not found') || 
+        rpcError.message.includes('Access Denied') ||
+        rpcError.message.includes('not approved')
+      )) {
+        throw new Error(rpcError.message);
+      }
+    } catch (e: any) {
+      if (e.message && (
+        e.message.includes('غير متاحة') || 
+        e.message.includes('تم قبولها') ||
+        e.message.includes('Access Denied') ||
+        e.message.includes('not approved')
+      )) {
+        throw e;
+      }
+    }
+
+    // 2. Direct atomic update fallback with status='requested' precondition
     const { data, error } = await supabase
       .from('rides')
       .update({

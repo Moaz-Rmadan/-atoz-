@@ -212,6 +212,7 @@ export const AdminRbacPage: React.FC = () => {
       async () => {
         await roleService.toggleUserActiveStatus(userId, !currentActive);
         showToast('success', 'تم تحديث حالة الحساب بنجاح.');
+        loadData();
       }
     );
   };
@@ -232,6 +233,7 @@ export const AdminRbacPage: React.FC = () => {
       async () => {
         await roleService.toggleUserRole(userId, roleName, hasRole);
         showToast('success', 'تم تحديث أدوار المستخدم بنجاح.');
+        loadData();
         if (userId === currentUser?.id) {
           await refreshProfile();
         }
@@ -253,6 +255,7 @@ export const AdminRbacPage: React.FC = () => {
       async () => {
         await adminApi.updateMerchantStatus(merchantId, status);
         showToast('success', 'تم تحديث حالة التاجر وتسجيل العملية.');
+        loadData();
       }
     );
   };
@@ -271,6 +274,7 @@ export const AdminRbacPage: React.FC = () => {
       async () => {
         await adminApi.updateProviderStatus(providerId, status);
         showToast('success', 'تم تحديث حالة مقدم الخدمة بنجاح.');
+        loadData();
       }
     );
   };
@@ -287,8 +291,14 @@ export const AdminRbacPage: React.FC = () => {
       `تغيير حالة السائق (${name})`,
       `هل تريد تأكيد تغيير حالة السائق إلى "${statusLabels[status]}"؟ ستتأثر قدرة السائق على استقبال الرحلات.`,
       async () => {
-        await adminApi.updateDriverStatus(driverId, status);
-        showToast('success', 'تم تحديث حالة السائق بنجاح في قاعدة البيانات.');
+        try {
+          await adminApi.updateDriverStatus(driverId, status);
+          await loadData();
+          showToast('success', 'تم اعتماد الكابتن وتحديث قاعدة البيانات بنجاح');
+        } catch (error) {
+          console.error('[ADMIN DRIVER APPROVAL]', error);
+          showToast('error', error instanceof Error ? error.message : 'فشل اعتماد الكابتن');
+        }
       }
     );
   };
@@ -311,6 +321,7 @@ export const AdminRbacPage: React.FC = () => {
       async () => {
         await roleService.toggleRolePermission(roleId, permId, isAssigned);
         showToast('success', 'تم تحديث مصفوفة الصلاحيات للدور بنجاح.');
+        loadData();
       }
     );
   };

@@ -47,8 +47,10 @@ export interface AdminDriver {
   is_online: boolean;
   rating_average: number;
   created_at: string;
+  updated_at?: string;
   driver_name: string;
   driver_phone: string | null;
+  driver_avatar?: string | null;
 }
 
 export interface AdminAuditLog {
@@ -161,14 +163,56 @@ export const adminApi = {
    * Update approval status of a merchant (trigger automatically creates audit log)
    */
   async updateMerchantStatus(merchantId: string, status: VerificationStatus): Promise<void> {
-    const { error } = await supabase
+    const { data: merchantData, error: fetchErr } = await supabase
+      .from('merchants')
+      .select('profile_id')
+      .eq('id', merchantId)
+      .single();
+
+    if (fetchErr) {
+      console.error('[ADMIN] Error fetching merchant profile:', fetchErr);
+      throw new Error(`تعذر جلب ملف التاجر: ${fetchErr.message}`);
+    }
+    const profileId = merchantData.profile_id;
+
+    const { data, error } = await supabase
       .from('merchants')
       .update({ approval_status: status, updated_at: new Date().toISOString() })
-      .eq('id', merchantId);
+      .eq('id', merchantId)
+      .select();
 
     if (error) {
-      console.error('Error updating merchant status:', error);
+      console.error('[ADMIN] Error updating merchant status:', error);
       throw new Error(`تعذر تحديث حالة التاجر: ${error.message}`);
+    }
+
+    if (!data || data.length === 0) {
+      throw new Error('لم يتم تحديث السجل. تأكد من أن حسابك يمتلك صلاحيات المشرف (Admin) وأن السجل موجود.');
+    }
+
+    // Role synchronization for merchant
+    try {
+      const { data: roleData } = await supabase
+        .from('roles')
+        .select('id')
+        .eq('name', 'merchant')
+        .single();
+
+      if (roleData) {
+        if (status === 'approved') {
+          await supabase
+            .from('user_roles')
+            .upsert({ profile_id: profileId, role_id: roleData.id }, { onConflict: 'profile_id,role_id' });
+        } else if (status === 'suspended' || status === 'rejected') {
+          await supabase
+            .from('user_roles')
+            .delete()
+            .eq('profile_id', profileId)
+            .eq('role_id', roleData.id);
+        }
+      }
+    } catch (roleErr) {
+      console.error('[ADMIN] Error synchronizing merchant role:', roleErr);
     }
   },
 
@@ -209,14 +253,56 @@ export const adminApi = {
    * Update verification status of a service provider (trigger logs this)
    */
   async updateProviderStatus(providerId: string, status: VerificationStatus): Promise<void> {
-    const { error } = await supabase
+    const { data: providerData, error: fetchErr } = await supabase
+      .from('service_providers')
+      .select('profile_id')
+      .eq('id', providerId)
+      .single();
+
+    if (fetchErr) {
+      console.error('[ADMIN] Error fetching provider profile:', fetchErr);
+      throw new Error(`تعذر جلب ملف مقدم الخدمة: ${fetchErr.message}`);
+    }
+    const profileId = providerData.profile_id;
+
+    const { data, error } = await supabase
       .from('service_providers')
       .update({ verification_status: status, updated_at: new Date().toISOString() })
-      .eq('id', providerId);
+      .eq('id', providerId)
+      .select();
 
     if (error) {
-      console.error('Error updating provider status:', error);
+      console.error('[ADMIN] Error updating provider status:', error);
       throw new Error(`تعذر تحديث حالة مقدم الخدمة: ${error.message}`);
+    }
+
+    if (!data || data.length === 0) {
+      throw new Error('لم يتم تحديث السجل. تأكد من أن حسابك يمتلك صلاحيات المشرف (Admin) وأن السجل موجود.');
+    }
+
+    // Role synchronization for provider
+    try {
+      const { data: roleData } = await supabase
+        .from('roles')
+        .select('id')
+        .eq('name', 'provider')
+        .single();
+
+      if (roleData) {
+        if (status === 'approved') {
+          await supabase
+            .from('user_roles')
+            .upsert({ profile_id: profileId, role_id: roleData.id }, { onConflict: 'profile_id,role_id' });
+        } else if (status === 'suspended' || status === 'rejected') {
+          await supabase
+            .from('user_roles')
+            .delete()
+            .eq('profile_id', profileId)
+            .eq('role_id', roleData.id);
+        }
+      }
+    } catch (roleErr) {
+      console.error('[ADMIN] Error synchronizing provider role:', roleErr);
     }
   },
 
@@ -228,19 +314,29 @@ export const adminApi = {
       .from('drivers')
       .select(`
         *,
-        profiles (
+        profiles!drivers_profile_id_fkey (
+          id,
           full_name,
-          phone_number
+          phone_number,
+          avatar_url
         )
       `)
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching drivers for admin:', error);
-      throw new Error('حدث خطأ أثناء جلب قائمة السائقين.');
+      console.error('[ADMIN] Error fetching drivers:', error);
+      if (error.code === '42501' || error.message.includes('RLS')) {
+        throw new Error('خطأ في صلاحيات الوصول');
+      }
+      throw new Error(`حدث خطأ أثناء جلب قائمة السائقين: ${error.message}`);
     }
 
-    return (data || []).map((d: any) => ({
+    if (!data || data.length === 0) {
+      console.log('لا توجد سجلات');
+      return [];
+    }
+
+    return data.map((d: any) => ({
       id: d.id,
       profile_id: d.profile_id,
       national_id: d.national_id,
@@ -249,61 +345,45 @@ export const adminApi = {
       is_online: d.is_online,
       rating_average: Number(d.rating_average || 0),
       created_at: d.created_at,
+      updated_at: d.updated_at,
       driver_name: d.profiles?.full_name || 'غير معروف',
       driver_phone: d.profiles?.phone_number || null,
+      driver_avatar: d.profiles?.avatar_url || null,
     }));
   },
 
   /**
    * Update approval status of a driver (trigger logs this)
    */
-  async updateDriverStatus(driverId: string, status: VerificationStatus): Promise<void> {
-    const { data: driverData, error: fetchErr } = await supabase
-      .from('drivers')
-      .select('profile_id')
-      .eq('id', driverId)
-      .single();
-
-    if (fetchErr) {
-      console.error('Error fetching driver profile:', fetchErr);
-      throw new Error(`تعذر جلب ملف السائق: ${fetchErr.message}`);
+    async updateDriverStatus(driverId: string, status: VerificationStatus): Promise<void> {
+    // 1. Check if user is logged in
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError || !user) {
+      throw new Error('يجب تسجيل الدخول أولًا.');
     }
-    const profileId = driverData.profile_id;
 
-    const { error } = await supabase
-      .from('drivers')
-      .update({ approval_status: status, updated_at: new Date().toISOString() })
-      .eq('id', driverId);
+    console.log('[ADMIN DRIVER APPROVAL]');
+    console.log('adminUserId:', user.id);
+    console.log('driverId:', driverId);
+    console.log('newStatus:', status);
+
+    const { data, error } = await supabase.rpc('admin_approve_driver', {
+      p_driver_id: driverId,
+      p_status: status
+    });
 
     if (error) {
-      console.error('Error updating driver status:', error);
+      console.error('[ADMIN] RPC admin_approve_driver failed:', error);
       throw new Error(`تعذر تحديث حالة السائق: ${error.message}`);
     }
 
-    // Role synchronization with driver status
-    try {
-      const { data: roleData } = await supabase
-        .from('roles')
-        .select('id')
-        .eq('name', 'driver')
-        .single();
-
-      if (roleData) {
-        if (status === 'approved') {
-          await supabase
-            .from('user_roles')
-            .upsert({ user_id: profileId, role_id: roleData.id }, { onConflict: 'user_id,role_id' });
-        } else if (status === 'suspended' || status === 'rejected') {
-          await supabase
-            .from('user_roles')
-            .delete()
-            .eq('user_id', profileId)
-            .eq('role_id', roleData.id);
-        }
-      }
-    } catch (roleErr) {
-      console.error('Error synchronizing driver role:', roleErr);
+    if (data?.success !== true) {
+      console.error('[ADMIN] admin_approve_driver returned failure:', data);
+      throw new Error('لم تكتمل عملية الاعتماد بنجاح.');
     }
+    
+    console.log('Driver status updated successfully:', data);
   },
 
   /**
