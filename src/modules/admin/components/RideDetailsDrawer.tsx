@@ -143,7 +143,7 @@ export const RideDetailsDrawer: React.FC<RideDetailsDrawerProps> = ({
 
               <div className="text-left">
                 <div className="text-[11px] font-bold text-slate-500 mb-1">حالة الدفع:</div>
-                {ride.payment_status === 'paid_cash' ? (
+                {ride.payment_status === 'paid_cash' || ride.payment_status === 'completed' ? (
                   <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 inline-block">
                     تم التحصيل نقداً
                   </span>

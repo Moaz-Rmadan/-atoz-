@@ -41,8 +41,8 @@ export const LiveRidesTable: React.FC<LiveRidesTableProps> = ({
       if (statusFilter !== 'all' && r.status !== statusFilter) return false;
 
       // Payment filter
-      if (paymentFilter === 'pending_cash_collection' && r.payment_status !== 'pending_cash_collection') return false;
-      if (paymentFilter === 'paid_cash' && r.payment_status !== 'paid_cash') return false;
+      if (paymentFilter === 'pending_cash_collection' && r.payment_status !== 'pending_cash_collection' && r.payment_status !== 'pending') return false;
+      if (paymentFilter === 'paid_cash' && r.payment_status !== 'paid_cash' && r.payment_status !== 'completed') return false;
 
       // Search query
       if (searchQuery.trim()) {
@@ -113,6 +113,7 @@ export const LiveRidesTable: React.FC<LiveRidesTableProps> = ({
   const getPaymentStatusBadge = (status?: string) => {
     switch (status) {
       case 'paid_cash':
+      case 'completed':
         return (
           <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
             <CheckCircle2 className="w-3 h-3 text-emerald-600" />

@@ -77,7 +77,7 @@ export const RideCompletedModal: React.FC<RideCompletedModalProps> = ({
             {/* Cash Collection State Indicator */}
             <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs">
               <span className="text-slate-500 font-bold">حالة التحصيل:</span>
-              {ride.payment_status === 'paid_cash' ? (
+              {ride.payment_status === 'paid_cash' || ride.payment_status === 'completed' ? (
                 <span className="inline-flex items-center gap-1 text-emerald-700 font-black bg-emerald-100 px-2 py-0.5 rounded-md">
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   تم استلام النقد

@@ -191,7 +191,7 @@ export const adminApi = {
               ? r.driver_earning
               : Math.round((fare - comm) * 100) / 100;
 
-            if (r.payment_status === 'paid_cash') {
+            if (r.payment_status === 'paid_cash' || r.payment_status === 'completed') {
               mobilityStats.cashCollectedToday += fare;
               mobilityStats.platformCommissionToday += comm;
               mobilityStats.driverNetToday += net;
@@ -595,7 +595,7 @@ export const adminApi = {
         entry.driver_net += net;
         entry.amount_due_to_platform += comm;
 
-        if (r.payment_status === 'paid_cash') {
+        if (r.payment_status === 'paid_cash' || r.payment_status === 'completed') {
           entry.collected_cash += fare;
         } else {
           entry.pending_cash += fare;

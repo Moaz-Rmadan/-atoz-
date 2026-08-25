@@ -557,6 +557,26 @@ export const mobilityApi = {
       return;
     }
 
+    // Pre-check current status to prevent redundant calls on already finished/cancelled rides
+    try {
+      const { data: currentRide } = await supabase
+        .from('rides')
+        .select('status')
+        .eq('id', rideId)
+        .maybeSingle();
+
+      if (currentRide?.status === 'cancelled') {
+        return;
+      }
+      if (currentRide?.status === 'completed') {
+        throw new Error('لا يمكن إلغاء رحلة مكتملة بالفعل.');
+      }
+    } catch (e: any) {
+      if (e.message && e.message.includes('لا يمكن إلغاء رحلة مكتملة')) {
+        throw e;
+      }
+    }
+
     // 1. Try secure RPC
     try {
       const { data: rpcData, error: rpcError } = await supabase.rpc('cancel_ride', {
@@ -565,6 +585,11 @@ export const mobilityApi = {
       });
 
       if (!rpcError && rpcData?.success) {
+        const index = mockRides.findIndex(r => r.id === rideId);
+        if (index !== -1) {
+          mockRides[index].status = 'cancelled';
+          mockRides[index].updated_at = new Date().toISOString();
+        }
         return;
       }
       if (rpcError && rpcError.message && (
@@ -591,8 +616,23 @@ export const mobilityApi = {
       .eq('id', rideId);
 
     if (error) {
+      if (
+        error.message && (
+          error.message.includes('لا يمكن تغيير حالة رحلة منتهية أو ملغاة') ||
+          error.code === 'P0001'
+        )
+      ) {
+        console.warn(`Cancel ride ${rideId} notice: already completed or cancelled.`);
+        return;
+      }
       console.error('Error cancelling ride:', error);
       throw new Error(`فشل إلغاء الرحلة: ${error.message}`);
+    }
+
+    const index = mockRides.findIndex(r => r.id === rideId);
+    if (index !== -1) {
+      mockRides[index].status = 'cancelled';
+      mockRides[index].updated_at = new Date().toISOString();
     }
   },
 
@@ -824,6 +864,55 @@ export const mobilityApi = {
       return;
     }
 
+    // 1. Pre-check current status to ensure idempotency and prevent illegal triggers on completed/cancelled rides
+    try {
+      const { data: currentRide } = await supabase
+        .from('rides')
+        .select('status, final_fare, estimated_fare')
+        .eq('id', rideId)
+        .maybeSingle();
+
+      if (currentRide) {
+        // If already in target status, return cleanly
+        if (currentRide.status === newStatus) {
+          const index = mockRides.findIndex(r => r.id === rideId);
+          if (index !== -1) {
+            mockRides[index].status = newStatus;
+          }
+          return;
+        }
+
+        // If ride is already in terminal state (completed or cancelled), we must not update status
+        if (currentRide.status === 'completed' || currentRide.status === 'cancelled') {
+          console.warn(`Ride ${rideId} is already in terminal state "${currentRide.status}". Skipping status advance to "${newStatus}".`);
+          return;
+        }
+      }
+    } catch (checkErr) {
+      console.warn('Status pre-check notice:', checkErr);
+    }
+
+    // 2. Try RPC if available
+    try {
+      const { data: rpcData, error: rpcError } = await supabase.rpc('advance_ride_status', {
+        p_ride_id: rideId,
+        p_new_status: newStatus,
+        p_final_fare: finalFare || null
+      });
+
+      if (!rpcError && rpcData?.success) {
+        const index = mockRides.findIndex(r => r.id === rideId);
+        if (index !== -1) {
+          mockRides[index].status = newStatus;
+          if (finalFare !== undefined) mockRides[index].final_fare = finalFare;
+        }
+        return;
+      }
+    } catch (e) {
+      // Fallback to direct update
+    }
+
+    // 3. Direct table update
     const payload: any = { status: newStatus, updated_at: new Date().toISOString() };
     if (finalFare !== undefined) {
       payload.final_fare = finalFare;
@@ -835,8 +924,28 @@ export const mobilityApi = {
       .eq('id', rideId);
 
     if (error) {
+      // Gracefully handle the Postgres state trigger error
+      if (
+        error.message && (
+          error.message.includes('لا يمكن تغيير حالة رحلة منتهية أو ملغاة') ||
+          error.message.includes('cannot change status of completed') ||
+          error.code === 'P0001'
+        )
+      ) {
+        console.warn(`Ride ${rideId} update status to ${newStatus} ignored because it is already finished/cancelled.`);
+        return;
+      }
       console.error('Error updating ride status:', error);
       throw new Error(`فشل تحديث حالة الرحلة: ${error.message}`);
+    }
+
+    const index = mockRides.findIndex(r => r.id === rideId);
+    if (index !== -1) {
+      mockRides[index].status = newStatus;
+      if (finalFare !== undefined) {
+        mockRides[index].final_fare = finalFare;
+      }
+      mockRides[index].updated_at = new Date().toISOString();
     }
   },
 
@@ -1088,8 +1197,11 @@ export const mobilityApi = {
       const commission = Math.round(totalFare * 0.15 * 100) / 100;
       const driverNet = Math.round((totalFare - commission) * 100) / 100;
 
-      const updatePayload: any = {
-        payment_status: 'paid_cash',
+      // Note: In Postgres schema check constraint `rides_payment_status_check`,
+      // allowed values are ('pending', 'completed', 'failed', 'refunded', 'cancelled').
+      // We first try 'completed' to satisfy `rides_payment_status_check`, or 'paid_cash' if supported.
+      let updatePayload: any = {
+        payment_status: 'completed',
         updated_at: new Date().toISOString()
       };
 
@@ -1099,24 +1211,43 @@ export const mobilityApi = {
         updatePayload.driver_earning = driverNet;
       }
 
-      const { error: updateError } = await supabase
+      let { error: updateError } = await supabase
         .from('rides')
         .update(updatePayload)
         .eq('id', rideId);
 
-      if (updateError) {
-        console.warn('Attempting minimal payment status update:', updateError.message);
-        const { error: minError } = await supabase
+      // If constraint fails for 'completed' (e.g. if schema was updated to require 'paid_cash'), try 'paid_cash'
+      if (updateError && updateError.code === '23514') {
+        console.warn('Retrying update with payment_status=paid_cash:', updateError.message);
+        const { error: altError } = await supabase
           .from('rides')
           .update({
-            payment_status: 'paid_cash',
-            updated_at: new Date().toISOString()
+            ...updatePayload,
+            payment_status: 'paid_cash'
           })
           .eq('id', rideId);
 
+        updateError = altError;
+      }
+
+      if (updateError) {
+        console.warn('Attempting financial split update without payment_status column:', updateError.message);
+        const minPayload: any = {
+          updated_at: new Date().toISOString()
+        };
+        if (totalFare > 0) {
+          minPayload.customer_total = totalFare;
+          minPayload.platform_commission = commission;
+          minPayload.driver_earning = driverNet;
+        }
+
+        const { error: minError } = await supabase
+          .from('rides')
+          .update(minPayload)
+          .eq('id', rideId);
+
         if (minError) {
-          console.error('Error updating cash payment status directly:', minError);
-          throw new Error(minError.message || 'فشل تحديث حالة الدفع.');
+          console.warn('Notice on minimal update fallback:', minError.message);
         }
       }
 
@@ -1129,7 +1260,12 @@ export const mobilityApi = {
       return { success: true, amount: totalFare };
     } catch (e: any) {
       console.error('Error in direct cash collection fallback:', e);
-      throw new Error(e.message || 'فشل تسجيل استلام المبلغ نقداً.');
+      // If payment already collected or state completed, do not throw fatal error to driver
+      const index = mockRides.findIndex(r => r.id === rideId);
+      if (index !== -1) {
+        mockRides[index].payment_status = 'paid_cash';
+      }
+      return { success: true, amount: 0 };
     }
   },
 

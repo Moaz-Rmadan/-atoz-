@@ -32,7 +32,10 @@ export const DriverCashCollectionModal: React.FC<DriverCashCollectionModalProps>
       ? ride.driver_earning
       : Math.round((totalFare - platformCommission) * 100) / 100;
 
-  const isAlreadyPaid = ride.payment_status === 'paid_cash' || isConfirmedSuccess;
+  const isAlreadyPaid =
+    ride.payment_status === 'paid_cash' ||
+    ride.payment_status === 'completed' ||
+    isConfirmedSuccess;
 
   const handleConfirm = async () => {
     try {

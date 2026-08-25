@@ -229,7 +229,7 @@ export const DriverEarningsView: React.FC<DriverEarningsViewProps> = ({ driverId
                     </span>
                     <span className="inline-flex items-center gap-1 font-bold text-emerald-700">
                       <CheckCircle2 className="w-3 h-3" />
-                      {ride.payment_status === 'paid_cash' ? 'تم الاستلام' : 'محصل نقداً'}
+                      {ride.payment_status === 'paid_cash' || ride.payment_status === 'completed' ? 'تم الاستلام' : 'محصل نقداً'}
                     </span>
                   </div>
                 </div>
