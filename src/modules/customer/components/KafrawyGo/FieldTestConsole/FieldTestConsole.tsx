@@ -35,6 +35,9 @@ import {
 import { fieldTestRegistry } from '../../../tests/fieldTestRegistry';
 import { fieldTestRunner } from '../../../tests/fieldTestRunner';
 import { FieldTestReportExporter } from '../../../tests/fieldTestReport';
+import { autonomousE2ERunner } from '../../../tests/autonomousE2ERunner';
+import { E2ETestSuiteReport } from '../../../tests/e2eTypes';
+import { RealDeviceFieldTestLab } from './RealDeviceFieldTestLab';
 import { useAuth } from '../../../../../context/AuthContext';
 import { useToast } from '../../../../../context/ToastContext';
 
@@ -50,6 +53,7 @@ export const FieldTestConsole: React.FC<FieldTestConsoleProps> = ({
   const { user } = useAuth();
   const { success, error: toastError, info } = useToast();
 
+  const [consoleMode, setConsoleMode] = useState<'real_devices' | 'autonomous_e2e' | 'unit_tests'>('real_devices');
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [currentTest, setCurrentTest] = useState<{ id: string; name: string; index: number } | null>(null);
   const [progressPercent, setProgressPercent] = useState<number>(0);
@@ -89,6 +93,53 @@ export const FieldTestConsole: React.FC<FieldTestConsoleProps> = ({
       logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [logs, autoScrollLogs]);
+
+  const [e2eReport, setE2eReport] = useState<E2ETestSuiteReport | null>(null);
+
+  // Run Autonomous E2E Lifecycle Agent (25 tests)
+  const handleRunAutonomousE2E = async () => {
+    if (isRunning) return;
+    setIsRunning(true);
+    setCurrentTest({ id: 'E2E_AGENT', name: 'تشغيل وكيل E2E المستقل لدورة الرحلة (25 اختبار)', index: 1 });
+    setProgressPercent(0);
+    setLogs([]);
+    setShowLogsDrawer(true);
+
+    try {
+      info('🚀 جاري بدء تشغيل وكيل E2E المستقل لدورة الرحلة بالكامل...');
+      const runReport = await autonomousE2ERunner.runSuite(undefined, {
+        onTestStart: (test, index, total) => {
+          setCurrentTest({ id: test.id, name: test.name, index });
+          setProgressPercent(Math.round(((index - 1) / total) * 100));
+        },
+        onTestComplete: (result, index, total) => {
+          setProgressPercent(Math.round((index / total) * 100));
+          if (result.status === 'PASS') {
+            setLogs((prev) => [...prev, `[PASS 🟢] [${result.testId}] ${result.name} (${result.durationMs}ms)`]);
+          } else {
+            setLogs((prev) => [...prev, `[FAIL 🔴] [${result.testId}] ${result.name} - ${result.error || ''}`]);
+          }
+        },
+        onLog: (line) => {
+          setLogs((prev) => [...prev, line]);
+        },
+      });
+
+      setE2eReport(runReport);
+      setProgressPercent(100);
+
+      if (runReport.summary.failed === 0) {
+        success(`🎉 اكتمل فحص وكيل E2E بنجاح! ${runReport.summary.passed}/${runReport.summary.total} سيناريو ناجح.`);
+      } else {
+        toastError(`⚠️ اكتمل فحص وكيل E2E: ${runReport.summary.passed} ناجح، ${runReport.summary.failed} فاشل.`);
+      }
+    } catch (err: any) {
+      toastError(err.message || 'فشل تشغيل وكيل E2E');
+    } finally {
+      setIsRunning(false);
+      setCurrentTest(null);
+    }
+  };
 
   // Run all 30 tests
   const handleRunAll = async () => {
@@ -291,38 +342,84 @@ export const FieldTestConsole: React.FC<FieldTestConsoleProps> = ({
       className="w-full bg-slate-950 text-slate-100 rounded-3xl overflow-hidden shadow-2xl border border-slate-800 flex flex-col font-sans"
       style={{ fontFamily: "'IBM Plex Sans Arabic', sans-serif" }}
     >
-      {/* 1. TOP STATUS HEADER */}
-      <div className="p-4 sm:p-5 bg-slate-900 border-b border-slate-800/80 flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-              <Zap className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-black tracking-tight text-white">
-                  مختبر اختبارات كفراوي Go الميدانية
-                </h2>
-                <span className="px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-400 border border-emerald-800/60 text-[11px] font-bold">
-                  30 اختبار آلي
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                فحص شامل للمصادقة، GPS، المسارات OSRM، والتسعيرة، وRLS، والبث الحي
-              </p>
-            </div>
-          </div>
+      {/* 0. TOP CONSOLE MODE SWITCHER */}
+      <div className="p-3 bg-slate-900/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-2xl border border-slate-800">
+          <button
+            id="tab-mode-real-devices"
+            onClick={() => setConsoleMode('real_devices')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+              consoleMode === 'real_devices'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/50'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <span>📱 مختبر الأجهزة الحقيقية (Real Field Lab)</span>
+          </button>
 
-          {onClose && (
-            <button
-              id="btn-close-field-test"
-              onClick={onClose}
-              className="w-9 h-9 rounded-xl bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center hover:bg-slate-700 transition-all cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
+          <button
+            id="tab-mode-autonomous-e2e"
+            onClick={() => setConsoleMode('autonomous_e2e')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+              consoleMode === 'autonomous_e2e'
+                ? 'bg-purple-600 text-white shadow-md shadow-purple-900/50'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <span>🤖 وكيل E2E المستقل (25 مرحلة)</span>
+          </button>
+
+          <button
+            id="tab-mode-unit-tests"
+            onClick={() => setConsoleMode('unit_tests')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+              consoleMode === 'unit_tests'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-900/50'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <span>🧪 مصفوفة التكامل (30 اختبار)</span>
+          </button>
         </div>
+
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-xl bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      {consoleMode === 'real_devices' ? (
+        <RealDeviceFieldTestLab onClose={onClose} />
+      ) : (
+        <>
+          {/* 1. TOP STATUS HEADER */}
+          <div className="p-4 sm:p-5 bg-slate-900 border-b border-slate-800/80 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                  <Zap className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base sm:text-lg font-black tracking-tight text-white">
+                      {consoleMode === 'autonomous_e2e'
+                        ? 'وكيل E2E المستقل لدورة الرحلة الحقيقية'
+                        : 'مختبر اختبارات كفراوي Go الميدانية'}
+                    </h2>
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-400 border border-emerald-800/60 text-[11px] font-bold">
+                      {consoleMode === 'autonomous_e2e' ? '25 مرحلة تدقيق' : '30 اختبار آلي'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    فحص شامل للمصادقة، GPS، المسارات OSRM، والتسعيرة، وRLS، والبث الحي
+                  </p>
+                </div>
+              </div>
+            </div>
 
         {/* Environmental Pills Row */}
         <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px]">
@@ -476,14 +573,25 @@ export const FieldTestConsole: React.FC<FieldTestConsoleProps> = ({
         {/* Execution Controls */}
         <div className="flex flex-wrap items-center gap-2">
           {!isRunning ? (
-            <button
-              id="btn-run-all-tests"
-              onClick={handleRunAll}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-900/30 active:scale-95 transition-all cursor-pointer"
-            >
-              <Play className="w-3.5 h-3.5 fill-current" />
-              <span>تشغيل الكل (30 اختبار)</span>
-            </button>
+            <>
+              <button
+                id="btn-run-all-tests"
+                onClick={handleRunAll}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-900/30 active:scale-95 transition-all cursor-pointer"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>تشغيل الكل (30 اختبار)</span>
+              </button>
+
+              <button
+                id="btn-run-autonomous-e2e"
+                onClick={handleRunAutonomousE2E}
+                className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-indigo-900/30 active:scale-95 transition-all cursor-pointer"
+              >
+                <Zap className="w-3.5 h-3.5 fill-current" />
+                <span>وكيل E2E المستقل (25 مرحلة) 🤖</span>
+              </button>
+            </>
           ) : (
             <button
               id="btn-stop-tests"
@@ -868,6 +976,8 @@ export const FieldTestConsole: React.FC<FieldTestConsoleProps> = ({
           })
         )}
       </div>
-    </div>
+    </>
+  )}
+</div>
   );
 };
